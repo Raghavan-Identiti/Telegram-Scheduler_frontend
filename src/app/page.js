@@ -29,6 +29,9 @@ export default function Home() {
     setSchedules(updated);
   };
 
+    const BASE_URL = process.env.PRODUCTION === 'production' 
+    ? 'https://telegram-scheduler-backend.onrender.com/api'
+    : 'http://localhost:8000/api';
 
   const handleSubmit = async () => {
     if (!imageFiles.length || !textFiles.length) {
@@ -56,11 +59,14 @@ export default function Home() {
     );
 
     try {
-      const res = await axios.post("http://localhost:8000/bulk-schedule", formData, {
+
+      const res = await axios.post(`${BASE_URL}/bulk-schedule`, formData, {
         headers: {
           "Content-Type": "multipart/form-data"
-        }
+        },
+        withCredentials:true
       });
+
       setStatus(res.status === 200 ? `✅ ${res.data.status}` : '❌ Scheduling failed.');
       setIsDownloadReady(true);
     } catch (err) {
@@ -197,7 +203,7 @@ export default function Home() {
 
           {isDownloadReady && (
             <a
-              href="http://localhost:8000/logs/messages.xlsx"
+              href={`${BASE_URL}/logs/messages.xlsx`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block mt-2 text-indigo-500 hover:underline"
