@@ -32,7 +32,9 @@ export default function Home() {
     const BASE_URL = process.env.PRODUCTION === 'production' 
     ? 'https://telegram-scheduler-backend.onrender.com/api'
     : 'http://localhost:8000/api';
-
+    
+    console.log(BASE_URL,'line num 35');
+    
   const handleSubmit = async () => {
     if (!imageFiles.length || !textFiles.length) {
       setStatus('⚠️ Upload image and text files.');
