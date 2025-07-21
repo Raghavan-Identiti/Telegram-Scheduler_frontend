@@ -1,103 +1,212 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [imageFiles, setImageFiles] = useState([]);
+  const [textFiles, setTextFiles] = useState([]);
+  const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isDownloadReady, setIsDownloadReady] = useState(false);
+  const [schedules, setSchedules] = useState([]);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  useEffect(() => {
+    const count = Math.max(imageFiles.length, textFiles.length);
+    setSchedules((prev) =>
+      Array.from({ length: count }, (_, i) => prev[i] || { time: '', post: `${i + 1}` })
+    );
+  }, [imageFiles, textFiles]);
+  const handleDateChange = (index, newTime) => {
+    const updated = [...schedules];
+    updated[index].time = newTime;
+    setSchedules(updated);
+  };
+
+  const repeatPreviousDate = (index) => {
+    const updated = [...schedules];
+    updated[index].time = updated[index - 1]?.time || '';
+    setSchedules(updated);
+  };
+
+
+  const handleSubmit = async () => {
+    if (!imageFiles.length || !textFiles.length) {
+      setStatus('⚠️ Upload image and text files.');
+      return;
+    }
+
+    const allFilled = schedules.every((s) => s.time && s.post);
+    if (!allFilled) {
+      setStatus('⚠️ Fill all schedule times.');
+      return;
+    }
+
+    setLoading(true);
+    setStatus('');
+
+    const formData = new FormData();
+    imageFiles.forEach((file) => formData.append('files', file));
+    textFiles.forEach((file) => formData.append('files', file));
+    formData.append(
+      'schedule_data',
+      JSON.stringify(
+        Object.fromEntries(schedules.map((s) => [`post${s.post}.jpg`, s.time]))
+      )
+    );
+
+    try {
+      const res = await axios.post("http://localhost:8000/bulk-schedule", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
+        }
+      });
+      setStatus(res.status === 200 ? `✅ ${res.data.status}` : '❌ Scheduling failed.');
+      setIsDownloadReady(true);
+    } catch (err) {
+      console.error(err);
+      setStatus('❌ Upload failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F9FAFB] text-gray-800 flex items-center justify-center p-6">
+      <div className="w-full max-w-5xl bg-white rounded-3xl shadow-2xl p-10 space-y-10">
+        <h1 className="text-4xl font-bold text-center text-indigo-600">📬 Telegram Scheduler Dashboard</h1>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div>
+            <label className="block mb-2 font-semibold text-sm">📸 Upload Images</label>
+            {/* Dropzone for Images */}
+            <div
+              onDrop={(e) => {
+                e.preventDefault();
+                const files = Array.from(e.dataTransfer.files).filter(file =>
+                  file.type.startsWith('image/')
+                );
+                setImageFiles(files);
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              className="w-full border-2 border-dashed border-indigo-300 rounded-lg p-20 text-center bg-gray-50 hover:bg-indigo-50 cursor-pointer"
+              onClick={() => document.getElementById('imageInput').click()}
+            >
+              <input
+                id="imageInput"
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => setImageFiles(Array.from(e.target.files || []))}
+              />
+              <p className="text-gray-500">📤 Drag & drop or click to upload <strong>Images</strong></p>
+            </div>
+            <div className="mt-2 text-sm text-gray-600">
+              {imageFiles.length > 0
+                ? `✅ ${imageFiles.length} image file${imageFiles.length > 1 ? 's' : ''} uploaded`
+                : '📁 No image files uploaded yet'}
+            </div>
+          </div>
+
+          <div>
+            <label className="block mb-2 font-semibold text-sm">📄 Upload Text Files</label>
+            {/* Dropzone for Text Files */}
+            <div
+              onDrop={(e) => {
+                e.preventDefault();
+                const files = Array.from(e.dataTransfer.files).filter(file =>
+                  file.name.endsWith('.txt')
+                );
+                setTextFiles(files);
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              className="w-full border-2 border-dashed border-indigo-300 rounded-lg p-20 text-center bg-gray-50 hover:bg-indigo-50 cursor-pointer"
+              onClick={() => document.getElementById('textInput').click()}
+            >
+              <input
+                id="textInput"
+                type="file"
+                accept=".txt"
+                multiple
+                className="hidden"
+                onChange={(e) => setTextFiles(Array.from(e.target.files || []))}
+              />
+              <p className="text-gray-500">📤 Drag & drop or click to upload <strong>.txt files</strong></p>
+            </div>
+            <div className="mt-2 text-sm text-gray-600">
+              {textFiles.length > 0
+                ? `✅ ${textFiles.length} text file${textFiles.length > 1 ? 's' : ''} uploaded`
+                : '📁 No text files uploaded yet'}
+            </div>
+
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+
+        <div>
+          <h2 className="text-lg font-semibold mb-4">🕒 Schedule Times</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {schedules.map((post, index) => (
+              <div key={index} className="flex gap-2 items-center mb-3">
+                <input
+                  type="datetime-local"
+                  value={post.time || ''}
+                  onChange={(e) => handleDateChange(index, e.target.value)}
+                  className="border rounded px-2 py-1"
+                />
+
+
+                {index > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => repeatPreviousDate(index)}
+                    className="text-sm text-indigo-500 underline hover:text-indigo-700"
+                  >
+                    Repeat ⟳
+                  </button>
+                )}
+              </div>
+            ))}
+
+          </div>
+        </div>
+
+        <div className="text-center space-y-4">
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className={`w-full md:w-auto px-8 py-3 rounded-lg font-semibold text-white text-sm transition ${loading
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-indigo-500 hover:bg-indigo-600'
+              }`}
+          >
+            {loading ? 'Uploading...' : '🚀 Schedule Posts'}
+          </button>
+
+          {status && (
+            <p
+              className={`text-sm font-medium ${status.includes('✅')
+                ? 'text-emerald-600'
+                : 'text-rose-600'
+                }`}
+            >
+              {status}
+            </p>
+          )}
+
+          {isDownloadReady && (
+            <a
+              href="http://localhost:8000/logs/messages.xlsx"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block mt-2 text-indigo-500 hover:underline"
+            >
+              ⬇️ Download Scheduled Log
+            </a>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
