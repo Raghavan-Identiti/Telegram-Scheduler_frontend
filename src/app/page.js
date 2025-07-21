@@ -203,7 +203,7 @@ export default function Home() {
 
           {isDownloadReady && (
             <a
-              href={`${BASE_URL}/logs/messages.xlsx`}
+              href={`${process.env.NEXT_PUBLIC_API_CLIENT}/logs/messages.xlsx`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block mt-2 text-indigo-500 hover:underline"
