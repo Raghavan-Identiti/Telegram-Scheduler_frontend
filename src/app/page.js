@@ -29,10 +29,8 @@ export default function Home() {
     setSchedules(updated);
   };
 
-    const BASE_URL = process.env.PRODUCTION === 'production' 
-    ? 'https://telegram-scheduler-backend.onrender.com/api'
-    : 'http://localhost:8000/api';
-    
+    const BASE_URL = process.env.NEXT_PUBLIC_API_BASE;
+
     console.log(BASE_URL,'line num 35');
     
   const handleSubmit = async () => {
