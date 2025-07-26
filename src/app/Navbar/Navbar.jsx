@@ -11,7 +11,7 @@ const navItems = [
   { label: 'Manual Schedule', href: '/manual-schedule' },
   { label: 'Auto Schedule', href: '/auto-schedule' },
   { label: 'Logs', href: '/logs' }, // Optional
-  { label: 'Settings', href: '/settings' } // Optional
+//   { label: 'Settings', href: '/settings' } // Optional
 ];
 
 export default function Navbar() {
