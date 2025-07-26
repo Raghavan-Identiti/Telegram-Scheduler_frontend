@@ -245,7 +245,6 @@ export default function AutoSchedule() {
 
       </div>
 
-      <button onClick={handlePreview} className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 rounded">🔍 Preview Posts</button>
 
       {postCount !== null && (
         <p className="text-lg font-medium text-gray-800">📦 Total Posts: <span className="font-bold">{postCount}</span></p>
@@ -312,16 +311,16 @@ export default function AutoSchedule() {
             <input type="time" className="p-2 border rounded" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
           </div>
         </div>
-      </div>
-
+      </div>      
       <button
-        onClick={() => setShowConfirm(true)}
+        onClick={handlePreview}
         type="submit"
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded"
-        disabled={loading || !postCount}
+        
       >
-        {loading ? '⏳ Scheduling...' : '🧠 Validate & Confirm'}
+        {loading ? '⏳ Scheduling...' : '🔍 Preview Posts and Confirm'}
       </button>
+
 
       {/* {showConfirm && (
         <div className="mt-4 p-4 border rounded bg-green-50">
@@ -339,8 +338,9 @@ export default function AutoSchedule() {
             <DialogTitle className="text-yellow-600">🚨 Confirm Auto-Schedule</DialogTitle>
           </DialogHeader>
           <p className="mb-2">
-            Do you want to schedule <strong>{postCount}</strong> post{postCount > 1 ? 's' : ''} between{' '}
-            <strong>{startTime}</strong> and <strong>{endTime}</strong>?
+            Schedule 3 posts between <strong>{postCount}</strong> post{postCount > 1 ? 's' : ''} between{' '}
+            <strong>{startTime}</strong> and <strong>{endTime}</strong>? <br/>
+            Click <b className="text-[red]">Cancel</b> to schedule posts manually.
           </p>
           <div className="flex justify-end gap-4 mt-4">
             <button className="px-4 py-2 bg-gray-300 rounded" onClick={() => setShowConfirm(false)}>
