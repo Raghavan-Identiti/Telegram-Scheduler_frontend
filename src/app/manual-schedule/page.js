@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-export default function manual() {
+export default function ManualSchedule() {
   const [imageFiles, setImageFiles] = useState([]);
   const [textFiles, setTextFiles] = useState([]);
   const [status, setStatus] = useState('');
