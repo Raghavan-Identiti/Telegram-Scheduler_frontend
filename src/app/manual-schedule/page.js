@@ -74,6 +74,7 @@ export default function ManualSchedule() {
       setLoading(false);
     }
   };
+  
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-gray-800 flex items-center justify-center p-6">
