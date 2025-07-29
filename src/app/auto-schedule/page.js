@@ -18,19 +18,25 @@ export default function AutoSchedule() {
   const [loading, setLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [success, setSuccess] = useState(null);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isImageDragOver, setIsImageDragOver] = useState(false);
   const [isTextDragOver, setIsTextDragOver] = useState(false);
 
+  const [scheduledPosts, setScheduledPosts] = useState([]);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [schedulingStats, setSchedulingStats] = useState(null);
+  
   const resetForm = () => {
     setTextFile(null);
     setImages([]);
-    setPosts([]);
+    setResponse([]);
+    setScheduledPosts([]);
     setDateType("today");
     setCustomDate("");
     setStartTime("");
     setEndTime("");
+    setSchedulingStats(null);
   };
+
   const BASE_URL = process.env.NEXT_PUBLIC_API_BASE;
 
   const handleImageDrop = (e) => {
@@ -79,7 +85,7 @@ export default function AutoSchedule() {
 
       const matched = parsedPosts.map((post) => {
         const imgMatch = images.find((img) =>
-          new RegExp(`post[-_]?${post.post_number}\\.(jpg|jpeg|png|webp)`, 'i').test(img.name)
+        new RegExp(`post[\\s-_]*${post.post_number}(?:[^\\d]*)\\.(jpg|jpeg|png|webp)$`, 'i').test(img.name)
         );
         return {
           post_number: post.post_number,
@@ -90,7 +96,7 @@ export default function AutoSchedule() {
       });
 
       const extraImages = images.filter((img) => {
-        const numberMatch = img.name.match(/post[-_]?(\d+)\.(jpg|jpeg|png|webp)/i);
+      const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
         if (!numberMatch) return false;
         const number = parseInt(numberMatch[1]);
         return !parsedPosts.find((p) => p.post_number === number);
@@ -99,7 +105,7 @@ export default function AutoSchedule() {
       const previewPosts = [
         ...matched,
         ...extraImages.map((img) => {
-          const number = parseInt(img.name.match(/post[-_]?(\d+)/i)[1]);
+        const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
           return {
             post_number: number,
             has_text: false,
@@ -174,9 +180,15 @@ export default function AutoSchedule() {
     setLoading(true);
     try {
       const res = await axios.post(`${BASE_URL}/auto-schedule`, finalForm);
+      setScheduledPosts(res.data.posts || []);
+      setSchedulingStats({
+        scheduled: res.data.scheduled || 0,
+        failed: res.data.failed || 0,
+        total: res.data.total || 0
+      });
       setResponse(res.data);
       setSuccess(`🎉 Successfully scheduled ${postCount} post${postCount > 1 ? 's' : ''}!`);
-      setShowSuccessModal(true);  // Show modal
+      setShowStatusModal(true);  // Show modal
       setError(null);
     } catch (err) {
       console.error(err);
@@ -187,6 +199,33 @@ export default function AutoSchedule() {
       setShowConfirm(false);
     }
   };
+    // Function to get status badge color and icon
+  const getStatusBadge = (status, error) => {
+    switch (status) {
+      case 'scheduled':
+        return { 
+          bg: 'bg-green-100', 
+          text: 'text-green-700', 
+          icon: '✅', 
+          label: 'Scheduled' 
+        };
+      case 'failed':
+        return { 
+          bg: 'bg-red-100', 
+          text: 'text-red-700', 
+          icon: '❌', 
+          label: 'Failed' 
+        };
+      default:
+        return { 
+          bg: 'bg-gray-100', 
+          text: 'text-gray-700', 
+          icon: '⏳', 
+          label: 'Unknown' 
+        };
+    }
+  };
+
 
   return (
     <div className="max-w-4xl mx-auto mt-10 p-6 border rounded-xl shadow-xl bg-white text-[#000] space-y-6">
@@ -332,6 +371,7 @@ export default function AutoSchedule() {
         </div>
       )} */}
       {/* 🔁 Confirmation Modal */}
+      
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
         <DialogContent>
           <DialogHeader>
@@ -354,14 +394,78 @@ export default function AutoSchedule() {
       </Dialog>
 
       {/* 🎉 Success Modal */}
-      <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
-        <DialogContent>
+       <Dialog open={showStatusModal} onOpenChange={setShowStatusModal}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-green-600">✅ Success</DialogTitle>
+            <DialogTitle className="text-blue-600">📊 Scheduling Results</DialogTitle>
           </DialogHeader>
-          <p>{success}</p>
-          <div className="flex justify-end mt-4">
-            <Button onClick={() => setShowSuccessModal(false)}>Close</Button>
+          
+          {/* Summary Stats */}
+          {schedulingStats && (
+            <div className="bg-gray-50 p-4 rounded-lg mb-4">
+              <h3 className="font-semibold mb-2">📈 Summary</h3>
+              <div className="flex gap-4 text-sm">
+                <span className="bg-green-100 text-green-700 px-3 py-1 rounded">
+                  ✅ Scheduled: {schedulingStats.scheduled}
+                </span>
+                <span className="bg-red-100 text-red-700 px-3 py-1 rounded">
+                  ❌ Failed: {schedulingStats.failed}
+                </span>
+                <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded">
+                  📊 Total: {schedulingStats.total}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Individual Post Results */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {scheduledPosts.map((post, idx) => {
+              const statusBadge = getStatusBadge(post.status, post.error);
+              return (
+                <div key={idx} className="border rounded-lg p-4 shadow bg-white">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-md font-bold text-gray-700">Post #{post.post}</h3>
+                    <span className={`${statusBadge.bg} ${statusBadge.text} px-2 py-1 rounded text-sm font-medium`}>
+                      {statusBadge.icon} {statusBadge.label}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      {/* {post.image && <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs">🖼️ {post.image}</span>}
+                      {post.text && <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">📝 Text</span>} */}
+                      {/* {post.category && <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">🏷️ {post.category}</span>} */}
+                    </div>
+                    
+                    <p className="text-gray-600">
+                      <strong>Time:</strong> {post.time}
+                    </p>
+                    
+                    {/* {post.text && (
+                      <div className="bg-gray-50 p-2 rounded text-xs">
+                        <strong>Content:</strong> {post.text.length > 100 ? post.text.substring(0, 100) + '...' : post.text}
+                      </div>
+                    )} */}
+                    
+                    {post.error && (
+                      <div className="bg-red-50 border-l-4 border-red-400 p-2 text-xs">
+                        <strong className="text-red-700">Error:</strong> {post.error}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end gap-4 mt-6">
+            <Button onClick={() => { setShowStatusModal(false); resetForm(); }} className="bg-blue-600">
+              Schedule More Posts
+            </Button>
+            <Button onClick={() => setShowStatusModal(false)} variant="outline">
+              Close
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
