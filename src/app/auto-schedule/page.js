@@ -4,6 +4,31 @@ import axios from "axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+// Spinner Component
+function Spinner() {
+  return (
+    <svg
+      className="animate-spin h-5 w-5 text-white"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4h4z"
+      />
+    </svg>
+  );
+}
 
 export default function AutoSchedule() {
   const [dateType, setDateType] = useState('today');
@@ -20,6 +45,8 @@ export default function AutoSchedule() {
   const [success, setSuccess] = useState(null);
   const [isImageDragOver, setIsImageDragOver] = useState(false);
   const [isTextDragOver, setIsTextDragOver] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  // const [submitLoading, setSubmitLoading] = useState(false);
 
   const [scheduledPosts, setScheduledPosts] = useState([]);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -52,103 +79,125 @@ export default function AutoSchedule() {
     const file = e.dataTransfer.files[0];
     setTextFile(file);
   };
-
-  const handlePreview = async () => {
-    if (!textFile) return toast.error("Please upload a text file");
-
+const readFileAsText = (file) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = function (e) {
-      const text = e.target.result;
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsText(file);
+  });
+};
+const handlePreview = async () => {
+  if (!textFile) {
+    toast.error("Please upload a text file");
+    return;
+  }
+  if (images.length === 0) {
+    toast.error("Please upload at least one image");
+    return;
+  }
+  if (!startTime || !endTime || startTime >= endTime) {
+    toast.error("Please provide valid start and end times");
+    return;
+  }
 
-      if (!text.includes('AMZ_TELEGRAM')) return toast.error('❌ Invalid file: Missing AMZ_TELEGRAM section.');
+  try {
+    setPreviewLoading(true);
 
-      const postMatches = [...text.matchAll(/post-(\d+)\n([\s\S]*?)post-\1 end/gi)];
-      const parsedPosts = postMatches.map((match) => {
-        const postNumber = parseInt(match[1]);
-        const rawContent = match[2].trim();
-        const lines = rawContent.split('\n');
-        let category = null;
-        let content = rawContent;
+    const text = await readFileAsText(textFile);
 
-        if (lines[0]?.toLowerCase().startsWith('category:')) {
-          category = lines[0].slice('category:'.length).trim();
-          content = lines.slice(1).join('\n').trim();
-        }
+    if (!text.includes('AMZ_TELEGRAM')) {
+      toast.error('❌ Invalid file: Missing AMZ_TELEGRAM section.');
+      setPreviewLoading(false);
+      return;
+    }
 
-        return {
-          post_number: postNumber,
-          text: content,
-          category,
-        };
-      });
+    const postMatches = [...text.matchAll(/post-(\d+)\n([\s\S]*?)post-\1 end/gi)];
+    const parsedPosts = postMatches.map((match) => {
+      const postNumber = parseInt(match[1]);
+      const rawContent = match[2].trim();
+      const lines = rawContent.split('\n');
+      let category = null;
+      let content = rawContent;
 
+      if (lines[0]?.toLowerCase().startsWith('category:')) {
+        category = lines[0].slice('category:'.length).trim();
+        content = lines.slice(1).join('\n').trim();
+      }
 
-      const matched = parsedPosts.map((post) => {
-        const imgMatch = images.find((img) =>
+      return {
+        post_number: postNumber,
+        text: content,
+        category,
+      };
+    });
+
+    const matched = parsedPosts.map((post) => {
+      const imgMatch = images.find((img) =>
         new RegExp(`post[\\s-_]*${post.post_number}(?:[^\\d]*)\\.(jpg|jpeg|png|webp)$`, 'i').test(img.name)
-        );
-        return {
-          post_number: post.post_number,
-          has_text: post.text.length > 0,
-          has_image: !!imgMatch,
-          category: post.category,
-        };
-      });
+      );
+      return {
+        post_number: post.post_number,
+        has_text: post.text.length > 0,
+        has_image: !!imgMatch,
+        category: post.category,
+      };
+    });
 
-      const extraImages = images.filter((img) => {
+    const extraImages = images.filter((img) => {
       const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
-        if (!numberMatch) return false;
-        const number = parseInt(numberMatch[1]);
-        return !parsedPosts.find((p) => p.post_number === number);
-      });
+      if (!numberMatch) return false;
+      const number = parseInt(numberMatch[1]);
+      return !parsedPosts.find((p) => p.post_number === number);
+    });
 
-      const previewPosts = [
-        ...matched,
-        ...extraImages.map((img) => {
+    const previewPosts = [
+      ...matched,
+      ...extraImages.map((img) => {
         const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
-          return {
-            post_number: number,
-            has_text: false,
-            has_image: true,
-          };
-        }),
-      ].sort((a, b) => a.post_number - b.post_number);
-
-      // 🕒 Default Time Distribution Logic
-      const totalPosts = previewPosts.length;
-      const startParts = startTime.split(':').map(Number);
-      const endParts = endTime.split(':').map(Number);
-
-      // Convert to minutes since midnight
-      const startMinutes = startParts[0] * 60 + startParts[1];
-      const endMinutes = endParts[0] * 60 + endParts[1];
-
-      const interval = totalPosts > 1 ? Math.floor((endMinutes - startMinutes) / (totalPosts - 1)) : 0;
-
-      const postsWithTime = previewPosts.map((post, index) => {
-        const minutes = startMinutes + interval * index;
-        const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
-        const mins = String(minutes % 60).padStart(2, '0');
         return {
-          ...post,
-          time: `${hours}:${mins}`,
-          customTime: false,
+          post_number: number,
+          has_text: false,
+          has_image: true,
         };
-      });
+      }),
+    ].sort((a, b) => a.post_number - b.post_number);
 
+    // 🕒 Default Time Distribution Logic
+    const totalPosts = previewPosts.length;
+    const startParts = startTime.split(':').map(Number);
+    const endParts = endTime.split(':').map(Number);
 
-      setPostCount(postsWithTime.length);
-      setResponse(postsWithTime);
-      setError(null);
-      setShowConfirm(true);
-    };
+    // Convert to minutes since midnight
+    const startMinutes = startParts[0] * 60 + startParts[1];
+    const endMinutes = endParts[0] * 60 + endParts[1];
 
-    reader.onerror = function () {
-      setError('❌ Failed to read text file');
-    };
+    const interval = totalPosts > 1 ? Math.floor((endMinutes - startMinutes) / (totalPosts - 1)) : 0;
 
-    reader.readAsText(textFile);
-  };
+    const postsWithTime = previewPosts.map((post, index) => {
+      const minutes = startMinutes + interval * index;
+      const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+      const mins = String(minutes % 60).padStart(2, '0');
+      return {
+        ...post,
+        time: `${hours}:${mins}`,
+        customTime: false,
+      };
+    });
+
+    setPostCount(postsWithTime.length);
+    setResponse(postsWithTime);
+    setError(null);
+    setShowConfirm(true);
+
+  } catch (err) {
+    setError(err.message);
+    toast.error(err.message);
+  } finally {
+    setPreviewLoading(false);
+  }
+};
+
 
   const handleSubmit = async () => {
     const finalForm = new FormData();
@@ -352,13 +401,30 @@ export default function AutoSchedule() {
         </div>
       </div>      
       <button
-        onClick={handlePreview}
-        type="submit"
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded"
-        
-      >
-        {loading ? '⏳ Scheduling...' : '🔍 Preview Posts and Confirm'}
-      </button>
+      onClick={handlePreview}
+      type="submit"
+      disabled={loading}
+      className={`w-full flex items-center justify-center gap-2
+        py-2 px-4 rounded font-semibold text-white
+        transition duration-200 ease-in-out cursor-pointer
+        ${
+          loading
+            ? "bg-blue-400 cursor-not-allowed animate-pulse"
+            : "bg-blue-600 hover:bg-blue-700 active:scale-95"
+        }
+        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
+    >
+      {previewLoading ? (
+        <>
+          <Spinner />
+          Scheduling...
+        </>
+      ) : (
+        <>
+          🔍 Preview Posts and Confirm
+        </>
+      )}
+    </button>
 
 
       {/* {showConfirm && (
@@ -383,23 +449,45 @@ export default function AutoSchedule() {
             Click <b className="text-[red]">Cancel</b> to schedule posts manually.
           </p>
           <div className="flex justify-end gap-4 mt-4">
-            <button className="px-4 py-2 bg-gray-300 rounded" onClick={() => setShowConfirm(false)}>
+            <button className="px-4 py-2 bg-red-600 rounded text-white" onClick={() => setShowConfirm(false)}>
               Cancel
             </button>
-            <button className="px-4 py-2 bg-green-600 text-white rounded" onClick={handleSubmit}>
-              ✅ Confirm
+            <button
+              onClick={handleSubmit}
+              type="submit"
+              disabled={loading}
+              style={{textWrap:"nowrap"}}
+              className={`flex gap-3 px-11 py-2 bg-green-600 rounded font-semibold text-white
+              transition duration-200 ease-in-out cursor-pointer
+              ${loading
+                        ? "bg-green-400 cursor-not-allowed animate-pulse"
+                        : "bg-green-600 hover:bg-green-700 active:scale-95"
+                      }
+              focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
+            >
+              {loading ? (
+                <>
+                  <Spinner />
+                  Scheduling...
+                </>
+              ) : (
+                <>
+                  Confirm
+                </>
+              )}
             </button>
+
           </div>
         </DialogContent>
       </Dialog>
 
       {/* 🎉 Success Modal */}
-       <Dialog open={showStatusModal} onOpenChange={setShowStatusModal}>
+      <Dialog open={showStatusModal} onOpenChange={setShowStatusModal}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-blue-600">📊 Scheduling Results</DialogTitle>
           </DialogHeader>
-          
+
           {/* Summary Stats */}
           {schedulingStats && (
             <div className="bg-gray-50 p-4 rounded-lg mb-4">
@@ -460,9 +548,9 @@ export default function AutoSchedule() {
           </div>
 
           <div className="flex justify-end gap-4 mt-6">
-            <Button onClick={() => { setShowStatusModal(false); resetForm(); }} className="bg-blue-600">
+            {/* <Button onClick={() => { setShowStatusModal(false); resetForm(); }} className="bg-blue-600">
               Schedule More Posts
-            </Button>
+            </Button> */}
             <Button onClick={() => setShowStatusModal(false)} variant="outline">
               Close
             </Button>
