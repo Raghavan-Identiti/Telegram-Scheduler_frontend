@@ -4,6 +4,10 @@ import axios from "axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import TimePicker from 'react-time-picker';
+import style from './autoSchedule.module.css'
+import 'react-time-picker/dist/TimePicker.css';
+import 'react-clock/dist/Clock.css';
 // Spinner Component
 function Spinner() {
   return (
@@ -42,11 +46,13 @@ export default function AutoSchedule() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showSubmit, setshowSubmit] = useState(false);
   const [success, setSuccess] = useState(null);
   const [isImageDragOver, setIsImageDragOver] = useState(false);
   const [isTextDragOver, setIsTextDragOver] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   // const [submitLoading, setSubmitLoading] = useState(false);
+  const [isPreviewed, setIsPreviewed] = useState(false);
 
   const [scheduledPosts, setScheduledPosts] = useState([]);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -59,11 +65,10 @@ export default function AutoSchedule() {
     setScheduledPosts([]);
     setDateType("today");
     setCustomDate("");
-    setStartTime("");
-    setEndTime("");
+    setStartTime("10:00");
+    setEndTime("11:00");
     setSchedulingStats(null);
   };
-
   const BASE_URL = process.env.NEXT_PUBLIC_API_BASE;
 
   const handleImageDrop = (e) => {
@@ -79,6 +84,21 @@ export default function AutoSchedule() {
     const file = e.dataTransfer.files[0];
     setTextFile(file);
   };
+const handleTimeChange = (postNumber, newTime) => {
+  console.log("clicked change time");
+  
+  console.log(postNumber, newTime);
+  
+  setResponse((prevResponse) =>
+    prevResponse.map((post) =>
+      post.post_number === postNumber
+        ? { ...post, time: newTime }
+        : post
+    )
+  );
+};
+
+
 const readFileAsText = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -88,18 +108,11 @@ const readFileAsText = (file) => {
   });
 };
 const handlePreview = async () => {
-  if (!textFile) {
-    toast.error("Please upload a text file");
-    return;
-  }
-  if (images.length === 0) {
-    toast.error("Please upload at least one image");
-    return;
-  }
-  if (!startTime || !endTime || startTime >= endTime) {
-    toast.error("Please provide valid start and end times");
-    return;
-  }
+    if (!textFile) return toast.error("Please upload a text file");
+if (images.length === 0) {
+  toast.warning("No images uploaded. Only text posts will be scheduled.");
+}
+    if (!startTime || !endTime || startTime >= endTime) return toast.error("Please provide valid start and end times");
 
   try {
     setPreviewLoading(true);
@@ -144,12 +157,14 @@ const handlePreview = async () => {
       };
     });
 
-    const extraImages = images.filter((img) => {
-      const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
-      if (!numberMatch) return false;
-      const number = parseInt(numberMatch[1]);
-      return !parsedPosts.find((p) => p.post_number === number);
-    });
+const matchedPostNumbers = new Set(matched.map(p => p.post_number));
+const extraImages = images.filter((img) => {
+  const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
+  if (!numberMatch) return false;
+  const number = parseInt(numberMatch[1]);
+  return !matchedPostNumbers.has(number);
+});
+
 
     const previewPosts = [
       ...matched,
@@ -162,6 +177,16 @@ const handlePreview = async () => {
         };
       }),
     ].sort((a, b) => a.post_number - b.post_number);
+//     const hasImageOnlyPosts = previewPosts.some(post => post.has_image && !post.has_text);
+
+// if (hasImageOnlyPosts) {
+//   const confirmImageOnly = window.confirm("Some posts contain only images without text. Do you want to continue scheduling these image-only posts?");
+//   if (!confirmImageOnly) {
+//     setPreviewLoading(false);
+//     return;
+//   }
+// }
+
 
     // 🕒 Default Time Distribution Logic
     const totalPosts = previewPosts.length;
@@ -174,21 +199,28 @@ const handlePreview = async () => {
 
     const interval = totalPosts > 1 ? Math.floor((endMinutes - startMinutes) / (totalPosts - 1)) : 0;
 
-    const postsWithTime = previewPosts.map((post, index) => {
-      const minutes = startMinutes + interval * index;
-      const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
-      const mins = String(minutes % 60).padStart(2, '0');
-      return {
-        ...post,
-        time: `${hours}:${mins}`,
-        customTime: false,
-      };
-    });
+const postsWithTime = previewPosts.map((post, index) => {
+  if (post.customTime) {
+    // Preserve manually set time
+    return post;
+  }
+
+  const minutes = startMinutes + interval * index;
+  const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const mins = String(minutes % 60).padStart(2, '0');
+
+  return {
+    ...post,
+    time: `${hours}:${mins}`,
+    customTime: false,
+  };
+});
 
     setPostCount(postsWithTime.length);
     setResponse(postsWithTime);
     setError(null);
     setShowConfirm(true);
+    setIsPreviewed(true)
 
   } catch (err) {
     setError(err.message);
@@ -197,7 +229,6 @@ const handlePreview = async () => {
     setPreviewLoading(false);
   }
 };
-
 
   const handleSubmit = async () => {
     const finalForm = new FormData();
@@ -246,6 +277,7 @@ const handlePreview = async () => {
     } finally {
       setLoading(false);
       setShowConfirm(false);
+      setshowSubmit(false)
     }
   };
     // Function to get status badge color and icon
@@ -280,17 +312,6 @@ const handlePreview = async () => {
     <div className="max-w-4xl mx-auto mt-10 p-6 border rounded-xl shadow-xl bg-white text-[#000] space-y-6">
       <h2 className="text-2xl font-bold text-[#000]">📅 Auto Scheduler with Preview</h2>
 
-      {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block mb-2 font-semibold text-gray-700">Upload Images</label>
-          <input type="file" multiple accept="image/*" onChange={(e) => setImages([...e.target.files])} className="w-full p-2 border rounded" />
-        </div>
-
-        <div>
-          <label className="block mb-2 font-semibold text-gray-700">Upload Text File</label>
-          <input type="file" accept=".txt" onChange={(e) => setTextFile(e.target.files[0])} className="w-full p-2 border rounded" />
-        </div>
-      </div> */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className='flex flex-col gap-y-3'>
           <div
@@ -348,7 +369,7 @@ const handlePreview = async () => {
                 {post.has_text && <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">📝 Text</span>}
                 {post.has_image && <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-sm">🖼️ Image</span>}
                 {!post.has_image && !post.has_text && <span className="bg-red-100 text-red-700 px-2 py-1 rounded text-sm">🚫 Empty</span>}
-                {post.category && <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-sm">🏷️ {post.category}</span>}
+                {/*{post.category && <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-sm">🏷️ {post.category}</span>}*/}
               </div>
 
               <div className="mt-4">
@@ -358,14 +379,10 @@ const handlePreview = async () => {
                   <input
                     type="time"
                     value={post.time}
-                    onChange={(e) => {
-                      const newTime = e.target.value;
-                      const updated = [...response];
-                      updated[idx].time = newTime;
-                      updated[idx].customTime = true; // user-edited
-                      setResponse(updated);
-                    }}
+                    onChange={(e) => handleTimeChange(post.post_number, e.target.value)}
+                    className="border rounded px-2 py-1"
                   />
+
                 </p>
               </div>
             </div>
@@ -389,16 +406,38 @@ const handlePreview = async () => {
           )}
         </div>
 
-        <div className="flex gap-6 mt-4">
-          <div>
-            <label className="block font-semibold mb-1">Start Time</label>
-            <input type="time" className="p-2 border rounded" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">End Time</label>
-            <input type="time" className="p-2 border rounded" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
-          </div>
-        </div>
+
+
+<div className="flex gap-6 mt-4">
+  <div className="flex flex-col">
+    <label className="block font-semibold mb-1">Start Time</label>
+    {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
+      <TimePicker
+        onChange={setStartTime}
+        value={startTime}
+        format="HH:mm"
+        clearIcon={null}
+        clockIcon={null}
+        disableClock={true}
+      />
+    {/* </div> */}
+  </div>
+
+  <div className="flex flex-col">
+    <label className="block font-semibold mb-1">End Time</label>
+    {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
+      <TimePicker
+        onChange={setEndTime}
+        value={endTime}
+        format="HH:mm"
+        clearIcon={null}
+        clockIcon={null}
+        disableClock={true}
+      />
+    {/* </div> */}
+  </div>
+</div>
+
       </div>      
       <button
       onClick={handlePreview}
@@ -414,31 +453,35 @@ const handlePreview = async () => {
         }
         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
     >
-      {previewLoading ? (
+      🔍 Preview Posts and Confirm
+    </button>
+      <button
+      onClick={() => setshowSubmit(true)}
+      type="submit"
+      disabled={loading}
+      className={`w-full flex items-center justify-center gap-2
+        py-2 px-4 rounded font-semibold text-white
+        transition duration-200 ease-in-out cursor-pointer
+        ${
+          loading
+            ? "bg-blue-400 cursor-not-allowed animate-pulse"
+            : "bg-blue-600 hover:bg-blue-700 active:scale-95"
+        }
+        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
+    >
+      {loading ? (
         <>
           <Spinner />
           Scheduling...
         </>
       ) : (
         <>
-          🔍 Preview Posts and Confirm
+          🗓️ Schedule
         </>
       )}
     </button>
-
-
-      {/* {showConfirm && (
-        <div className="mt-4 p-4 border rounded bg-green-50">
-          <p className="mb-3 font-medium text-gray-700">✅ Confirm scheduling <strong>{postCount}</strong> posts between <strong>{startTime}</strong> and <strong>{endTime}</strong>?</p>
-          <div className="flex gap-4">
-            <button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">✅ Yes, Schedule</button>
-            <button onClick={() => setShowConfirm(false)} className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
-          </div>
-        </div>
-      )} */}
-      {/* 🔁 Confirmation Modal */}
-      
-      <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
+    
+      <Dialog open={showSubmit} onOpenChange={setshowSubmit}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="text-yellow-600">🚨 Confirm Auto-Schedule</DialogTitle>
@@ -449,7 +492,7 @@ const handlePreview = async () => {
             Click <b className="text-[red]">Cancel</b> to schedule posts manually.
           </p>
           <div className="flex justify-end gap-4 mt-4">
-            <button className="px-4 py-2 bg-red-600 rounded text-white" onClick={() => setShowConfirm(false)}>
+            <button className="px-4 py-2 bg-red-600 rounded text-white" onClick={() => setshowSubmit(false)}>
               Cancel
             </button>
             <button

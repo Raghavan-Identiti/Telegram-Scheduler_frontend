@@ -14,3 +14,7 @@
     transform: rotate(360deg);
   }
 }
+
+.react-time-picker__wrapper{
+  border: 0px !important;
+}
