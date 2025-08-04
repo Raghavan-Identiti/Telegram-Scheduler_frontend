@@ -554,7 +554,7 @@ const postsWithTime = previewPosts.map((post, index) => {
             {scheduledPosts.map((post, idx) => {
               const statusBadge = getStatusBadge(post.status, post.error);
               return (
-                <div key={idx} className="border rounded-lg p-4 shadow bg-white">
+                <div key={`${post.image || post.text || 'unknown'}-${post.time}`} className="border rounded-lg p-4 shadow bg-white">
                   <div className="flex justify-between items-center mb-2">
                     <h3 className="text-md font-bold text-gray-700">Post #{post.post}</h3>
                     <span className={`${statusBadge.bg} ${statusBadge.text} px-2 py-1 rounded text-sm font-medium`}>
