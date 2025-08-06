@@ -8,7 +8,7 @@ function cn(...classes) {
 }
 
 const navItems = [
-  { label: 'Manual Schedule', href: '/manual-schedule' },
+  // { label: 'Manual Schedule', href: '/manual-schedule' },
   { label: 'Auto Schedule', href: '/auto-schedule' },
   { label: 'Logs', href: '/logs' }, // Optional
 //   { label: 'Settings', href: '/settings' } // Optional
