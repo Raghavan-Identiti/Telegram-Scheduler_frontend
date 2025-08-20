@@ -9,6 +9,7 @@ function cn(...classes) {
 
 const navItems = [
   // { label: 'Manual Schedule', href: '/manual-schedule' },
+  // { label: 'Calendar-AutoScheduler', href: '/calender' },
   { label: 'Auto Schedule', href: '/auto-schedule' },
   { label: 'Logs', href: '/logs' }, // Optional
 //   { label: 'Settings', href: '/settings' } // Optional

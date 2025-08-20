@@ -57,7 +57,10 @@ export default function AutoSchedule() {
   const [scheduledPosts, setScheduledPosts] = useState([]);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [schedulingStats, setSchedulingStats] = useState(null);
-  
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [blockedTimes, setBlockedTimes] = useState([]);
+  const [intervalOption, setIntervalOption] = useState(null);
+
   const resetForm = () => {
     setTextFile(null);
     setImages([]);
@@ -84,151 +87,158 @@ export default function AutoSchedule() {
     const file = e.dataTransfer.files[0];
     setTextFile(file);
   };
-const handleTimeChange = (postNumber, newTime) => {
-  console.log("clicked change time");
-  
-  console.log(postNumber, newTime);
-  
-  setResponse((prevResponse) =>
-    prevResponse.map((post) =>
-      post.post_number === postNumber
-        ? { ...post, time: newTime }
-        : post
-    )
-  );
-};
+  const handleTimeChange = (postNumber, newTime) => {
+    console.log("clicked change time");
+
+    console.log(postNumber, newTime);
+
+    setResponse((prevResponse) =>
+      prevResponse.map((post) =>
+        post.post_number === postNumber
+          ? { ...post, time: newTime, customTime: true }  // Add customTime flag here
+          : post
+      )
+    );
+  };
 
 
-const readFileAsText = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
-};
-const handlePreview = async () => {
+  const readFileAsText = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsText(file);
+    });
+  };
+  const handlePreview = async () => {
     if (!textFile) return toast.error("Please upload a text file");
-if (images.length === 0) {
-  toast.warning("No images uploaded. Only text posts will be scheduled.");
-}
+    if (images.length === 0) {
+      toast.warning("No images uploaded. Only text posts will be scheduled.");
+    }
     if (!startTime || !endTime || startTime >= endTime) return toast.error("Please provide valid start and end times");
 
-  try {
-    setPreviewLoading(true);
+    try {
+      setPreviewLoading(true);
 
-    const text = await readFileAsText(textFile);
+      const text = await readFileAsText(textFile);
 
-    if (!text.includes('AMZ_TELEGRAM')) {
-      toast.error('❌ Invalid file: Missing AMZ_TELEGRAM section.');
-      setPreviewLoading(false);
-      return;
-    }
-
-    const postMatches = [...text.matchAll(/post-(\d+)\n([\s\S]*?)post-\1 end/gi)];
-    const parsedPosts = postMatches.map((match) => {
-      const postNumber = parseInt(match[1]);
-      const rawContent = match[2].trim();
-      const lines = rawContent.split('\n');
-      let category = null;
-      let content = rawContent;
-
-      if (lines[0]?.toLowerCase().startsWith('category:')) {
-        category = lines[0].slice('category:'.length).trim();
-        content = lines.slice(1).join('\n').trim();
+      if (!text.includes('AMZ_TELEGRAM')) {
+        toast.error('❌ Invalid file: Missing AMZ_TELEGRAM section.');
+        setPreviewLoading(false);
+        return;
       }
 
-      return {
-        post_number: postNumber,
-        text: content,
-        category,
-      };
-    });
+      const postMatches = [...text.matchAll(/post-(\d+)\n([\s\S]*?)post-\1 end/gi)];
+      const parsedPosts = postMatches.map((match) => {
+        const postNumber = parseInt(match[1]);
+        const rawContent = match[2].trim();
+        const lines = rawContent.split('\n');
+        let category = null;
+        let content = rawContent;
 
-    const matched = parsedPosts.map((post) => {
-      const imgMatch = images.find((img) =>
-        new RegExp(`post[\\s-_]*${post.post_number}(?:[^\\d]*)\\.(jpg|jpeg|png|webp)$`, 'i').test(img.name)
-      );
-      return {
-        post_number: post.post_number,
-        has_text: post.text.length > 0,
-        has_image: !!imgMatch,
-        category: post.category,
-      };
-    });
+        if (lines[0]?.toLowerCase().startsWith('category:')) {
+          category = lines[0].slice('category:'.length).trim();
+          content = lines.slice(1).join('\n').trim();
+        }
 
-const matchedPostNumbers = new Set(matched.map(p => p.post_number));
-const extraImages = images.filter((img) => {
-  const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
-  if (!numberMatch) return false;
-  const number = parseInt(numberMatch[1]);
-  return !matchedPostNumbers.has(number);
-});
-
-
-    const previewPosts = [
-      ...matched,
-      ...extraImages.map((img) => {
-        const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
         return {
-          post_number: number,
-          has_text: false,
-          has_image: true,
+          post_number: postNumber,
+          text: content,
+          category,
         };
-      }),
-    ].sort((a, b) => a.post_number - b.post_number);
-//     const hasImageOnlyPosts = previewPosts.some(post => post.has_image && !post.has_text);
+      });
 
-// if (hasImageOnlyPosts) {
-//   const confirmImageOnly = window.confirm("Some posts contain only images without text. Do you want to continue scheduling these image-only posts?");
-//   if (!confirmImageOnly) {
-//     setPreviewLoading(false);
-//     return;
-//   }
-// }
+      const matched = parsedPosts.map((post) => {
+        const imgMatch = images.find((img) =>
+          new RegExp(`post[\\s-_]*${post.post_number}(?:[^\\d]*)\\.(jpg|jpeg|png|webp)$`, 'i').test(img.name)
+        );
+        return {
+          post_number: post.post_number,
+          has_text: post.text.length > 0,
+          has_image: !!imgMatch,
+          category: post.category,
+        };
+      });
+
+      const matchedPostNumbers = new Set(matched.map(p => p.post_number));
+      const extraImages = images.filter((img) => {
+        const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
+        if (!numberMatch) return false;
+        const number = parseInt(numberMatch[1]);
+        return !matchedPostNumbers.has(number);
+      });
 
 
-    // 🕒 Default Time Distribution Logic
-    const totalPosts = previewPosts.length;
-    const startParts = startTime.split(':').map(Number);
-    const endParts = endTime.split(':').map(Number);
+      const previewPosts = [
+        ...matched,
+        ...extraImages.map((img) => {
+          const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
+          return {
+            post_number: number,
+            has_text: false,
+            has_image: true,
+          };
+        }),
+      ].sort((a, b) => a.post_number - b.post_number);
+      //     const hasImageOnlyPosts = previewPosts.some(post => post.has_image && !post.has_text);
 
-    // Convert to minutes since midnight
-    const startMinutes = startParts[0] * 60 + startParts[1];
-    const endMinutes = endParts[0] * 60 + endParts[1];
+      // if (hasImageOnlyPosts) {
+      //   const confirmImageOnly = window.confirm("Some posts contain only images without text. Do you want to continue scheduling these image-only posts?");
+      //   if (!confirmImageOnly) {
+      //     setPreviewLoading(false);
+      //     return;
+      //   }
+      // }
 
-    const interval = totalPosts > 1 ? Math.floor((endMinutes - startMinutes) / (totalPosts - 1)) : 0;
 
-const postsWithTime = previewPosts.map((post, index) => {
-  if (post.customTime) {
-    // Preserve manually set time
-    return post;
-  }
+      // 🕒 Default Time Distribution Logic
+      const totalPosts = previewPosts.length;
+      const startParts = startTime.split(':').map(Number);
+      const endParts = endTime.split(':').map(Number);
 
-  const minutes = startMinutes + interval * index;
-  const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
-  const mins = String(minutes % 60).padStart(2, '0');
+      // Convert to minutes since midnight
+      const startMinutes = startParts[0] * 60 + startParts[1];
+      const endMinutes = endParts[0] * 60 + endParts[1];
 
-  return {
-    ...post,
-    time: `${hours}:${mins}`,
-    customTime: false,
+      let interval;
+      if (intervalOption) {
+        interval = intervalOption;  // use user-selected interval
+      } else {
+        interval = totalPosts > 1 ? Math.floor((endMinutes - startMinutes) / (totalPosts - 1)) : 0;
+      }
+
+      const postsWithTime = previewPosts.map((post, index) => {
+        if (post.customTime) return post; // keep manually set times
+
+        const minutes = startMinutes + interval * index;
+
+        if (minutes > endMinutes) {
+          return { ...post, time: null, customTime: false }; // mark unschedulable if exceeds end
+        }
+
+        const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+        const mins = String(minutes % 60).padStart(2, '0');
+
+        return {
+          ...post,
+          time: `${hours}:${mins}`,
+          customTime: false,
+        };
+      });
+
+      setPostCount(postsWithTime.length);
+      setResponse(postsWithTime);
+      setError(null);
+      setShowConfirm(true);
+      setIsPreviewed(true)
+
+    } catch (err) {
+      setError(err.message);
+      toast.error(err.message);
+    } finally {
+      setPreviewLoading(false);
+    }
   };
-});
-
-    setPostCount(postsWithTime.length);
-    setResponse(postsWithTime);
-    setError(null);
-    setShowConfirm(true);
-    setIsPreviewed(true)
-
-  } catch (err) {
-    setError(err.message);
-    toast.error(err.message);
-  } finally {
-    setPreviewLoading(false);
-  }
-};
 
   const handleSubmit = async () => {
     const finalForm = new FormData();
@@ -260,6 +270,10 @@ const postsWithTime = previewPosts.map((post, index) => {
     setLoading(true);
     try {
       const res = await axios.post(`${BASE_URL}/auto-schedule`, finalForm);
+      if (!res.data) {
+        throw new Error("Invalid response from server");
+      }
+      console.log("Response from API:", res.data);
       setScheduledPosts(res.data.posts || []);
       setSchedulingStats({
         scheduled: res.data.scheduled || 0,
@@ -267,6 +281,8 @@ const postsWithTime = previewPosts.map((post, index) => {
         total: res.data.total || 0
       });
       setResponse(res.data);
+
+      setBlockedTimes(res.data.blocked_times)
       setSuccess(`🎉 Successfully scheduled ${postCount} post${postCount > 1 ? 's' : ''}!`);
       setShowStatusModal(true);  // Show modal
       setError(null);
@@ -280,29 +296,29 @@ const postsWithTime = previewPosts.map((post, index) => {
       setshowSubmit(false)
     }
   };
-    // Function to get status badge color and icon
+  // Function to get status badge color and icon
   const getStatusBadge = (status, error) => {
     switch (status) {
       case 'scheduled':
-        return { 
-          bg: 'bg-green-100', 
-          text: 'text-green-700', 
-          icon: '✅', 
-          label: 'Scheduled' 
+        return {
+          bg: 'bg-green-100',
+          text: 'text-green-700',
+          icon: '✅',
+          label: 'Scheduled'
         };
       case 'failed':
-        return { 
-          bg: 'bg-red-100', 
-          text: 'text-red-700', 
-          icon: '❌', 
-          label: 'Failed' 
+        return {
+          bg: 'bg-red-100',
+          text: 'text-red-700',
+          icon: '❌',
+          label: 'Failed'
         };
       default:
-        return { 
-          bg: 'bg-gray-100', 
-          text: 'text-gray-700', 
-          icon: '⏳', 
-          label: 'Unknown' 
+        return {
+          bg: 'bg-gray-100',
+          text: 'text-gray-700',
+          icon: '⏳',
+          label: 'Unknown'
         };
     }
   };
@@ -408,79 +424,125 @@ const postsWithTime = previewPosts.map((post, index) => {
 
 
 
-<div className="flex gap-6 mt-4">
-  <div className="flex flex-col">
-    <label className="block font-semibold mb-1">Start Time</label>
-    {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
-      <TimePicker
-        onChange={setStartTime}
-        value={startTime}
-        format="HH:mm"
-        clearIcon={null}
-        clockIcon={null}
-        disableClock={true}
-      />
-    {/* </div> */}
-  </div>
+        <div className="flex gap-6 mt-4">
+          <div className="flex flex-col">
+            <label className="block font-semibold mb-1">Start Time</label>
+            {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
+            <TimePicker
+              onChange={setStartTime}
+              value={startTime}
+              format="HH:mm"
+              clearIcon={null}
+              clockIcon={null}
+              disableClock={true}
+            />
+            {/* </div> */}
+          </div>
 
-  <div className="flex flex-col">
-    <label className="block font-semibold mb-1">End Time</label>
-    {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
-      <TimePicker
-        onChange={setEndTime}
-        value={endTime}
-        format="HH:mm"
-        clearIcon={null}
-        clockIcon={null}
-        disableClock={true}
-      />
-    {/* </div> */}
-  </div>
-</div>
+          <div className="flex flex-col">
+            <label className="block font-semibold mb-1">End Time</label>
+            {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
+            <TimePicker
+              onChange={setEndTime}
+              value={endTime}
+              format="HH:mm"
+              clearIcon={null}
+              clockIcon={null}
+              disableClock={true}
+            />
+            {/* </div> */}
+          </div>
+        </div>
+        <div className="flex flex-col mt-4">
+          <label className="block font-semibold mb-1">Interval</label>
+          <select
+            className="p-2 border rounded bg-white"
+            value={intervalOption || ""}
+            onChange={(e) => setIntervalOption(e.target.value ? parseInt(e.target.value) : null)}
+          >
+            <option value="">Auto (Evenly Distributed)</option>
+            <option value="5">Every 5 minutes</option>
+            <option value="10">Every 10 minutes</option>
+            <option value="15">Every 15 minutes</option>
+            <option value="30">Every 30 minutes</option>
+          </select>
+        </div>
 
-      </div>      
+
+      </div>
       <button
-      onClick={handlePreview}
-      type="submit"
-      disabled={loading}
-      className={`w-full flex items-center justify-center gap-2
+        onClick={handlePreview}
+        type="submit"
+        disabled={loading}
+        className={`w-full flex items-center justify-center gap-2
         py-2 px-4 rounded font-semibold text-white
         transition duration-200 ease-in-out cursor-pointer
-        ${
-          loading
+        ${loading
             ? "bg-blue-400 cursor-not-allowed animate-pulse"
             : "bg-blue-600 hover:bg-blue-700 active:scale-95"
-        }
+          }
         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
-    >
-      🔍 Preview Posts and Confirm
-    </button>
+      >
+        🔍 Preview Posts and Confirm
+      </button>
       <button
-      onClick={() => setshowSubmit(true)}
-      type="submit"
-      disabled={loading}
-      className={`w-full flex items-center justify-center gap-2
+        onClick={() => setshowSubmit(true)}
+        type="submit"
+        disabled={loading}
+        className={`w-full flex items-center justify-center gap-2
         py-2 px-4 rounded font-semibold text-white
         transition duration-200 ease-in-out cursor-pointer
-        ${
-          loading
+        ${loading
             ? "bg-blue-400 cursor-not-allowed animate-pulse"
             : "bg-blue-600 hover:bg-blue-700 active:scale-95"
-        }
+          }
         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
-    >
-      {loading ? (
-        <>
-          <Spinner />
-          Scheduling...
-        </>
-      ) : (
-        <>
-          🗓️ Schedule
-        </>
-      )}
-    </button>
-    
+      >
+        {loading ? (
+          <>
+            <Spinner />
+            Scheduling...
+          </>
+        ) : (
+          <>
+            🗓️ Schedule
+          </>
+        )}
+      </button>
+      {response?.time_slots && (
+  <div className="mt-6">
+    <h3 className="font-semibold text-lg text-gray-800 mb-3">⏰ Time Slots</h3>
+
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      {response.time_slots.map((slot, idx) => {
+        const isBlocked = slot.status === "blocked";
+        return (
+          <div
+            key={idx}
+            className={`
+              flex flex-col items-center justify-center p-3 rounded-xl shadow-sm transition
+              ${isBlocked
+                ? "bg-red-100 text-red-700 border border-red-300 hover:bg-red-200"
+                : "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200"}
+            `}
+            title={`${new Date(slot.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${slot.status})`}
+          >
+            <span className="text-sm font-medium">
+              {new Date(slot.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span className="text-xs mt-1">
+              {isBlocked ? "⛔ Blocked" : "✅ Free"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+
+
+
+
       <Dialog open={showSubmit} onOpenChange={setshowSubmit}>
         <DialogContent>
           <DialogHeader>
@@ -488,7 +550,7 @@ const postsWithTime = previewPosts.map((post, index) => {
           </DialogHeader>
           <p className="mb-2">
             Schedule 3 posts between <strong>{postCount}</strong> post{postCount > 1 ? 's' : ''} between{' '}
-            <strong>{startTime}</strong> and <strong>{endTime}</strong>? <br/>
+            <strong>{startTime}</strong> and <strong>{endTime}</strong>? <br />
             Click <b className="text-[red]">Cancel</b> to schedule posts manually.
           </p>
           <div className="flex justify-end gap-4 mt-4">
@@ -499,13 +561,13 @@ const postsWithTime = previewPosts.map((post, index) => {
               onClick={handleSubmit}
               type="submit"
               disabled={loading}
-              style={{textWrap:"nowrap"}}
+              style={{ textWrap: "nowrap" }}
               className={`flex gap-3 px-11 py-2 bg-green-600 rounded font-semibold text-white
               transition duration-200 ease-in-out cursor-pointer
               ${loading
-                        ? "bg-green-400 cursor-not-allowed animate-pulse"
-                        : "bg-green-600 hover:bg-green-700 active:scale-95"
-                      }
+                  ? "bg-green-400 cursor-not-allowed animate-pulse"
+                  : "bg-green-600 hover:bg-green-700 active:scale-95"
+                }
               focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
             >
               {loading ? (
@@ -568,17 +630,17 @@ const postsWithTime = previewPosts.map((post, index) => {
                       {post.text && <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">📝 Text</span>} */}
                       {/* {post.category && <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">🏷️ {post.category}</span>} */}
                     </div>
-                    
+
                     <p className="text-gray-600">
                       <strong>Time:</strong> {post.time}
                     </p>
-                    
+
                     {/* {post.text && (
                       <div className="bg-gray-50 p-2 rounded text-xs">
                         <strong>Content:</strong> {post.text.length > 100 ? post.text.substring(0, 100) + '...' : post.text}
                       </div>
                     )} */}
-                    
+
                     {post.error && (
                       <div className="bg-red-50 border-l-4 border-red-400 p-2 text-xs">
                         <strong className="text-red-700">Error:</strong> {post.error}
