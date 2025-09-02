@@ -8,6 +8,9 @@ import TimePicker from 'react-time-picker';
 import style from './autoSchedule.module.css'
 import 'react-time-picker/dist/TimePicker.css';
 import 'react-clock/dist/Clock.css';
+import gsheeticon from './google-sheets-icon.png'
+import Image from 'next/image';
+
 // Spinner Component
 function Spinner() {
   return (
@@ -53,6 +56,9 @@ export default function AutoSchedule() {
   const [previewLoading, setPreviewLoading] = useState(false);
   // const [submitLoading, setSubmitLoading] = useState(false);
   const [isPreviewed, setIsPreviewed] = useState(false);
+  const [status, setStatus] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [gshloading, setgshLoading] = useState(true);
 
   const [scheduledPosts, setScheduledPosts] = useState([]);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -60,6 +66,50 @@ export default function AutoSchedule() {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [blockedTimes, setBlockedTimes] = useState([]);
   const [intervalOption, setIntervalOption] = useState(null);
+  const [selectedStart, setSelectedStart] = useState(null);
+const [selectedEnd, setSelectedEnd] = useState(null);
+// Helper: normalize anything to "HH:mm" without forcing UTC
+const toHHmm = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") {
+    // ISO string like "2025-09-02T10:15:00+05:30" or "...Z"
+    if (value.includes("T")) return value.slice(11, 16);
+    // "HH:mm" or "HH:mm:ss"
+    if (/^\d{2}:\d{2}/.test(value)) return value.slice(0, 5);
+  }
+  if (value instanceof Date) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(value.getHours())}:${pad(value.getMinutes())}`; // LOCAL time
+  }
+  // last resort
+  try {
+    const d = new Date(value);
+    if (!isNaN(d)) {
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  } catch {}
+  return "";
+};
+
+const handleSlotClick = (hhmm) => {
+  // If no start yet OR both start+end already chosen → reset and pick new start
+  if (!selectedStart || (selectedStart && selectedEnd)) {
+    setSelectedStart(hhmm);
+    setStartTime(hhmm);
+    setSelectedEnd(null);
+    setEndTime(null);
+  } else {
+    // Otherwise, trying to pick end
+    if (hhmm === selectedStart) {
+      // ⛔ Ignore if same as start
+      toast.error("End time cannot be the same as start time");
+      return;
+    }
+    setSelectedEnd(hhmm);
+    setEndTime(hhmm);
+  }
+};
 
   const resetForm = () => {
     setTextFile(null);
@@ -128,68 +178,88 @@ export default function AutoSchedule() {
         return;
       }
 
-      const postMatches = [...text.matchAll(/post-(\d+)\n([\s\S]*?)post-\1 end/gi)];
-      const parsedPosts = postMatches.map((match) => {
-        const postNumber = parseInt(match[1]);
-        const rawContent = match[2].trim();
-        const lines = rawContent.split('\n');
-        let category = null;
-        let content = rawContent;
+const postMatches = [...text.matchAll(
+  /(post[\s\-_]*\**\s*(\d+)\s*\**)[\s\S]*?(?:(time\s*[:\-]\s*([0-9:\sampAMP]+))?[\s\S]*?(category\s*[:\-]?(.*?))?)?([\s\S]*?)(post[\s\-_]*\**\s*\2\s*\**[\s\S]*?(?:end|done|finish))/gi
+)];
 
-        if (lines[0]?.toLowerCase().startsWith('category:')) {
-          category = lines[0].slice('category:'.length).trim();
-          content = lines.slice(1).join('\n').trim();
-        }
+const parsedPosts = postMatches.map((match) => {
+  const postNumber = parseInt(match[2]);   // ✅ use capture group 2 for number
+  const rawContent = match[7].trim();      // ✅ use group 7 for content
+  const lines = rawContent.split("\n");
+  let category = null;
+  let content = rawContent;
+    let scheduledTime = null;
 
-        return {
-          post_number: postNumber,
-          text: content,
-          category,
-        };
-      });
 
-      const matched = parsedPosts.map((post) => {
-        const imgMatch = images.find((img) =>
-          new RegExp(`post[\\s-_]*${post.post_number}(?:[^\\d]*)\\.(jpg|jpeg|png|webp)$`, 'i').test(img.name)
-        );
-        return {
-          post_number: post.post_number,
-          has_text: post.text.length > 0,
-          has_image: !!imgMatch,
-          category: post.category,
-        };
-      });
+  // Extract TIME: HH:mm if present (case-insensitive)
+  const timeLine = lines.find(l => /^time\s*[:\-]\s*\d{1,2}:\d{2}/i.test(l.trim()));
+  if (timeLine) {
+    scheduledTime = timeLine.match(/\d{1,2}:\d{2}/)[0];
+    content = lines.filter(l => l.trim().toLowerCase() !== timeLine.trim().toLowerCase()).join("\n").trim();
+  }
+  if (lines[0]?.toLowerCase().startsWith("category:")) {
+    category = lines[0].slice("category:".length).trim();
+    content = lines.slice(1).join("\n").trim();
+  }
+
+  return {
+    post_number: postNumber,
+    text: content,
+    category,
+        scheduledTime,  // ✅ extracted per post
+
+  };
+});
+
+
+// Merge text posts with images
+const matched = parsedPosts.map((post) => {
+  const imgMatch = images.find((img) =>
+    new RegExp(`post[\\s-_]*${post.post_number}(?:[^\\d]*)\\.(jpg|jpeg|png|webp)$`, "i").test(img.name)
+  );
+  return {
+    post_number: post.post_number,
+    text: post.text,
+    has_text: post.text.length > 0,
+    has_image: !!imgMatch,
+    category: post.category,
+        scheduledTime: post.scheduledTime, // ✅ keep scheduledTime
+
+  };
+});
 
       const matchedPostNumbers = new Set(matched.map(p => p.post_number));
-      const extraImages = images.filter((img) => {
-        const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
-        if (!numberMatch) return false;
-        const number = parseInt(numberMatch[1]);
-        return !matchedPostNumbers.has(number);
-      });
+// Collect any images with no matching text post (image-only)
+const extraImages = images.filter((img) => {
+  const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
+  if (!numberMatch) return false;
+  const number = parseInt(numberMatch[1]);
+  return !matched.some((p) => p.post_number === number);
+});
 
 
-      const previewPosts = [
-        ...matched,
-        ...extraImages.map((img) => {
-          const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
-          return {
-            post_number: number,
-            has_text: false,
-            has_image: true,
-          };
-        }),
-      ].sort((a, b) => a.post_number - b.post_number);
-      //     const hasImageOnlyPosts = previewPosts.some(post => post.has_image && !post.has_text);
+// Final preview list
+const previewPosts = [
+  ...matched,
+  ...extraImages.map((img) => {
+    const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
+    return {
+      post_number: number,
+      text: "",           // no text
+      has_text: false,
+      has_image: true,
+      image_only: true,   // ✅ flag image-only
+            scheduledTime: null, // ✅ keep this key even for image-only
 
-      // if (hasImageOnlyPosts) {
-      //   const confirmImageOnly = window.confirm("Some posts contain only images without text. Do you want to continue scheduling these image-only posts?");
-      //   if (!confirmImageOnly) {
-      //     setPreviewLoading(false);
-      //     return;
-      //   }
-      // }
+    };
+  }),
+].sort((a, b) => a.post_number - b.post_number);
 
+// Warn but don't block preview
+const imageOnly = previewPosts.filter(p => p.image_only);
+if (imageOnly.length > 0) {
+  toast.warning(`${imageOnly.length} post(s) only have images. They will be skipped.`);
+}
 
       // 🕒 Default Time Distribution Logic
       const totalPosts = previewPosts.length;
@@ -209,6 +279,8 @@ export default function AutoSchedule() {
 
       const postsWithTime = previewPosts.map((post, index) => {
         if (post.customTime) return post; // keep manually set times
+          if (post.scheduledTime) return { ...post, time: post.scheduledTime, customTime: true };
+          
 
         const minutes = startMinutes + interval * index;
 
@@ -264,6 +336,7 @@ export default function AutoSchedule() {
     finalForm.append('start_time', fullStart);
     finalForm.append('end_time', fullEnd);
     response.forEach((post) => {
+        if (post.image_only) return;  // 🚫 skip image-only
       finalForm.append("times[]", `${post.post_number}|${post.time}`);
     });
 
@@ -322,10 +395,56 @@ export default function AutoSchedule() {
         };
     }
   };
+const checkOrConnectSheets = async (reconnect = false) => {
+    setgshLoading(true);
+    setStatus(reconnect ? "Reconnecting..." : "Checking connection...");
+    try {
+      const res = await axios.post(`${BASE_URL}/sheets/connect-or-check`, { reconnect });
+      setConnected(res.data.connected);
+      setStatus(res.data.message);
+    } catch (err) {
+      setConnected(false);
+      setStatus("⚠️ Error: " + err.message);
+    } finally {
+      setgshLoading(false);
+    }
+  };
 
-
+  useEffect(() => {
+    // Check status on page load
+    checkOrConnectSheets(false);
+  }, []);
   return (
     <div className="max-w-4xl mx-auto mt-10 p-6 border rounded-xl shadow-xl bg-white text-[#000] space-y-6">
+      <div className="p-4 border rounded-xl shadow-md flex items-center justify-between">
+  <div className="flex items-center gap-2">
+    <span className="text-xl" title="Google Sheets">
+      <Image src={gsheeticon} alt="Google Sheets" className="w-8 h-8" />
+    </span>
+    {/* Small indicator "blub" */}
+    <span
+      className={`w-3 h-3 rounded-full transition-colors ${
+        connected ? "bg-green-500" : "bg-red-500"
+      }`}
+      title={connected ? "Connected" : "Not Connected"}
+    ></span>
+  </div>
+
+  <button
+    onClick={() => checkOrConnectSheets(true)}
+    className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700"
+    disabled={gshloading}
+  >
+    {gshloading
+      ? "Please wait..."
+      : connected
+      ? "Reconnect Sheets"
+      : "Connect Sheets"}
+  </button>
+</div>
+
+<p className="mt-2 text-sm">{status}</p>
+
       <h2 className="text-2xl font-bold text-[#000]">📅 Auto Scheduler with Preview</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -509,30 +628,49 @@ export default function AutoSchedule() {
           </>
         )}
       </button>
-      {response?.time_slots && (
+{response?.time_slots && (
   <div className="mt-6">
     <h3 className="font-semibold text-lg text-gray-800 mb-3">⏰ Time Slots</h3>
 
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {response.time_slots.map((slot, idx) => {
         const isBlocked = slot.status === "blocked";
+
+        // Normalize every time to "HH:mm"
+        const timeStr = toHHmm(slot.time);
+        const startStr = toHHmm(selectedStart);
+        const endStr = toHHmm(selectedEnd);
+
+        const isST = startStr === timeStr;
+        const isET = endStr === timeStr;
+
         return (
           <div
             key={idx}
             className={`
-              flex flex-col items-center justify-center p-3 rounded-xl shadow-sm transition
-              ${isBlocked
-                ? "bg-red-100 text-red-700 border border-red-300 hover:bg-red-200"
-                : "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200"}
+              relative flex flex-col items-center justify-center p-4 rounded-xl shadow-sm cursor-pointer transition
+              ${isBlocked ? "bg-red-100 text-red-700 border border-red-300" : "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200"}
+              ${isST || isET ? "ring-2 ring-blue-500" : ""}
             `}
-            title={`${new Date(slot.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${slot.status})`}
+            onClick={() => {
+              if (isBlocked) return toast.error("This slot is blocked");
+              // Pass HH:mm to the handler to avoid any timezone conversion
+              handleSlotClick(timeStr);
+            }}
           >
-            <span className="text-sm font-medium">
-              {new Date(slot.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-            <span className="text-xs mt-1">
-              {isBlocked ? "⛔ Blocked" : "✅ Free"}
-            </span>
+            <span className="text-sm font-medium">{timeStr}</span>
+            <span className="text-xs mt-1">{isBlocked ? "⛔ Blocked" : "✅ Free"}</span>
+
+            {isST && (
+              <span className="absolute top-1 right-2 text-green-700 font-bold text-xs border border-green-700 rounded-full px-2 py-0.5">
+                ST
+              </span>
+            )}
+            {isET && (
+              <span className="absolute top-1 right-2 text-green-700 font-bold text-xs border border-green-700 rounded-full px-2 py-0.5">
+                ET
+              </span>
+            )}
           </div>
         );
       })}
