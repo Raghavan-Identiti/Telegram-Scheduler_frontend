@@ -8,7 +8,7 @@ import TimePicker from 'react-time-picker';
 import style from './autoSchedule.module.css'
 import 'react-time-picker/dist/TimePicker.css';
 import 'react-clock/dist/Clock.css';
-import gsheeticon from './google-sheets-icon.png'
+import gsheeticon from '../../assests/google-sheets-icon.png'
 import Image from 'next/image';
 
 // Spinner Component
@@ -66,62 +66,72 @@ export default function AutoSchedule() {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [blockedTimes, setBlockedTimes] = useState([]);
   const [intervalOption, setIntervalOption] = useState(null);
+  const [scheduleMode, setScheduleMode] = useState("default");  // ⬅️ add this
   const [selectedStart, setSelectedStart] = useState(null);
-const [selectedEnd, setSelectedEnd] = useState(null);
-// Helper: normalize anything to "HH:mm" without forcing UTC
-const toHHmm = (value) => {
-  if (!value) return "";
-  if (typeof value === "string") {
-    // ISO string like "2025-09-02T10:15:00+05:30" or "...Z"
-    if (value.includes("T")) return value.slice(11, 16);
-    // "HH:mm" or "HH:mm:ss"
-    if (/^\d{2}:\d{2}/.test(value)) return value.slice(0, 5);
-  }
-  if (value instanceof Date) {
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${pad(value.getHours())}:${pad(value.getMinutes())}`; // LOCAL time
-  }
-  // last resort
-  try {
-    const d = new Date(value);
-    if (!isNaN(d)) {
+  const [selectedEnd, setSelectedEnd] = useState(null);
+  const [selectedChannels, setSelectedChannels] = useState([]);
+
+const CHANNELS = [
+  { id: 'amazonindiaassociates', name: 'Amazon India Associates', value: '@amazonindiaassociates' },
+  { id: 'Amazon_Associates_FashionBeauty', name: 'Fashion & Beauty', value: '@Amazon_Associates_FashionBeauty' },
+  { id: 'Amazon_Associates_HomeKitchen', name: 'Home & Kitchen', value: '@Amazon_Associates_HomeKitchen' },
+  { id: 'Amazon_Associates_Consumables', name: 'Consumables', value: '@Amazon_Associates_Consumables' }
+];
+  // Helper: normalize anything to "HH:mm" without forcing UTC
+  const toHHmm = (value) => {
+    if (!value) return "";
+    if (typeof value === "string") {
+      // ISO string like "2025-09-02T10:15:00+05:30" or "...Z"
+      if (value.includes("T")) return value.slice(11, 16);
+      // "HH:mm" or "HH:mm:ss"
+      if (/^\d{2}:\d{2}/.test(value)) return value.slice(0, 5);
+    }
+    if (value instanceof Date) {
       const pad = (n) => String(n).padStart(2, "0");
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `${pad(value.getHours())}:${pad(value.getMinutes())}`; // LOCAL time
     }
-  } catch {}
-  return "";
-};
-
-const handleSlotClick = (hhmm) => {
-  // If no start yet OR both start+end already chosen → reset and pick new start
-  if (!selectedStart || (selectedStart && selectedEnd)) {
-    setSelectedStart(hhmm);
-    setStartTime(hhmm);
-    setSelectedEnd(null);
-    setEndTime(null);
-  } else {
-    // Otherwise, trying to pick end
-    if (hhmm === selectedStart) {
-      // ⛔ Ignore if same as start
-      toast.error("End time cannot be the same as start time");
-      return;
-    }
-    setSelectedEnd(hhmm);
-    setEndTime(hhmm);
-  }
-};
-
-  const resetForm = () => {
-    setTextFile(null);
-    setImages([]);
-    setResponse([]);
-    setScheduledPosts([]);
-    setDateType("today");
-    setCustomDate("");
-    setStartTime("10:00");
-    setEndTime("11:00");
-    setSchedulingStats(null);
+    // last resort
+    try {
+      const d = new Date(value);
+      if (!isNaN(d)) {
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+    } catch { }
+    return "";
   };
+
+  const handleSlotClick = (hhmm) => {
+    // If no start yet OR both start+end already chosen → reset and pick new start
+    if (!selectedStart || (selectedStart && selectedEnd)) {
+      setSelectedStart(hhmm);
+      setStartTime(hhmm);
+      setSelectedEnd(null);
+      setEndTime(null);
+    } else {
+      // Otherwise, trying to pick end
+      if (hhmm === selectedStart) {
+        // ⛔ Ignore if same as start
+        toast.error("End time cannot be the same as start time");
+        return;
+      }
+      setSelectedEnd(hhmm);
+      setEndTime(hhmm);
+    }
+  };
+
+const resetForm = () => {
+  setTextFile(null);
+  setImages([]);
+  setResponse([]);
+  setScheduledPosts([]);
+  setSelectedChannels([]); // Add this line
+  setDateType("today");
+  setCustomDate("");
+  setStartTime("10:00");
+  setEndTime("11:00");
+  setSchedulingStats(null);
+};
   const BASE_URL = process.env.NEXT_PUBLIC_API_BASE;
 
   const handleImageDrop = (e) => {
@@ -160,157 +170,176 @@ const handleSlotClick = (hhmm) => {
       reader.readAsText(file);
     });
   };
-  const handlePreview = async () => {
-    if (!textFile) return toast.error("Please upload a text file");
-    if (images.length === 0) {
-      toast.warning("No images uploaded. Only text posts will be scheduled.");
+const handlePreview = async () => {
+  if (!textFile) return toast.error("Please upload a text file");
+  if (images.length === 0) {
+    toast.warning("No images uploaded. Only text posts will be scheduled.");
+  }
+  // Add this check at the start of handlePreview function
+  if (selectedChannels.length === 0) {
+    return toast.error("Please select at least one channel");
+  }
+  if (!startTime || !endTime || startTime >= endTime)
+    return toast.error("Please provide valid start and end times");
+
+  try {
+    setPreviewLoading(true);
+
+    const text = await readFileAsText(textFile);
+
+    if (!text.includes("AMZ_TELEGRAM")) {
+      toast.error("❌ Invalid file: Missing AMZ_TELEGRAM section.");
+      setPreviewLoading(false);
+      return;
     }
-    if (!startTime || !endTime || startTime >= endTime) return toast.error("Please provide valid start and end times");
 
-    try {
-      setPreviewLoading(true);
+    // 🔎 Parse posts
+    const postMatches = [...text.matchAll(
+      /(post[\s\-_]*\**\s*(\d+)\s*\**)[\s\S]*?(?:(time\s*[:\-]\s*([0-9:\sampAMP]+))?[\s\S]*?(category\s*[:\-]?(.*?))?)?([\s\S]*?)(post[\s\-_]*\**\s*\2\s*\**[\s\S]*?(?:end|done|finish))/gi
+    )];
 
-      const text = await readFileAsText(textFile);
+    const parsedPosts = postMatches.map((match) => {
+      const postNumber = parseInt(match[2]);
+      const rawContent = match[7].trim();
+      const lines = rawContent.split("\n");
+      let category = null;
+      let content = rawContent;
+      let scheduledTime = null;
 
-      if (!text.includes('AMZ_TELEGRAM')) {
-        toast.error('❌ Invalid file: Missing AMZ_TELEGRAM section.');
-        setPreviewLoading(false);
-        return;
+      // Extract TIME: HH:mm if present
+      const timeLine = lines.find((l) =>
+        /^time\s*[:\-]\s*\d{1,2}:\d{2}/i.test(l.trim())
+      );
+      if (timeLine) {
+        scheduledTime = timeLine.match(/\d{1,2}:\d{2}/)[0];
+        content = lines
+          .filter(
+            (l) => l.trim().toLowerCase() !== timeLine.trim().toLowerCase()
+          )
+          .join("\n")
+          .trim();
+      }
+      if (lines[0]?.toLowerCase().startsWith("category:")) {
+        category = lines[0].slice("category:".length).trim();
+        content = lines.slice(1).join("\n").trim();
       }
 
-const postMatches = [...text.matchAll(
-  /(post[\s\-_]*\**\s*(\d+)\s*\**)[\s\S]*?(?:(time\s*[:\-]\s*([0-9:\sampAMP]+))?[\s\S]*?(category\s*[:\-]?(.*?))?)?([\s\S]*?)(post[\s\-_]*\**\s*\2\s*\**[\s\S]*?(?:end|done|finish))/gi
-)];
+      return {
+        post_number: postNumber,
+        text: content,
+        category,
+        scheduledTime,
+      };
+    });
 
-const parsedPosts = postMatches.map((match) => {
-  const postNumber = parseInt(match[2]);   // ✅ use capture group 2 for number
-  const rawContent = match[7].trim();      // ✅ use group 7 for content
-  const lines = rawContent.split("\n");
-  let category = null;
-  let content = rawContent;
-    let scheduledTime = null;
+    // Merge text posts with images
+    const matched = parsedPosts.map((post) => {
+      const imgMatch = images.find((img) =>
+        new RegExp(
+          `post[^\\d]*${post.post_number}[^\\d]*\\.(jpg|jpeg|png|webp)$`,
+          "i"
+        ).test(img.name)
+      );
+      return {
+        post_number: post.post_number,
+        text: post.text,
+        has_text: post.text.length > 0,
+        has_image: !!imgMatch,
+        category: post.category,
+        scheduledTime: post.scheduledTime,
+      };
+    });
 
+    const matchedPostNumbers = new Set(matched.map((p) => p.post_number));
+    const extraImages = images.filter((img) => {
+      const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
+      if (!numberMatch) return false;
+      const number = parseInt(numberMatch[1]);
+      return !matched.some((p) => p.post_number === number);
+    });
 
-  // Extract TIME: HH:mm if present (case-insensitive)
-  const timeLine = lines.find(l => /^time\s*[:\-]\s*\d{1,2}:\d{2}/i.test(l.trim()));
-  if (timeLine) {
-    scheduledTime = timeLine.match(/\d{1,2}:\d{2}/)[0];
-    content = lines.filter(l => l.trim().toLowerCase() !== timeLine.trim().toLowerCase()).join("\n").trim();
-  }
-  if (lines[0]?.toLowerCase().startsWith("category:")) {
-    category = lines[0].slice("category:".length).trim();
-    content = lines.slice(1).join("\n").trim();
-  }
+    // Final preview list
+    const previewPosts = [
+      ...matched,
+      ...extraImages.map((img) => {
+        const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
+        return {
+          post_number: number,
+          text: "",
+          has_text: false,
+          has_image: true,
+          image_only: true,
+          scheduledTime: null,
+        };
+      }),
+    ].sort((a, b) => a.post_number - b.post_number);
 
-  return {
-    post_number: postNumber,
-    text: content,
-    category,
-        scheduledTime,  // ✅ extracted per post
+    const imageOnly = previewPosts.filter((p) => p.image_only);
+    if (imageOnly.length > 0) {
+      toast.warning(
+        `${imageOnly.length} post(s) only have images. They will be skipped.`
+      );
+    }
 
-  };
-});
+    // Time assignment
+    const totalPosts = previewPosts.length;
+    const startParts = startTime.split(":").map(Number);
+    const endParts = endTime.split(":").map(Number);
+    const startMinutes = startParts[0] * 60 + startParts[1];
+    const endMinutes = endParts[0] * 60 + endParts[1];
+    const totalDuration = endMinutes - startMinutes;
 
+    let postsWithTime = [];
 
-// Merge text posts with images
-const matched = parsedPosts.map((post) => {
-  const imgMatch = images.find((img) =>
-    new RegExp(`post[\\s-_]*${post.post_number}(?:[^\\d]*)\\.(jpg|jpeg|png|webp)$`, "i").test(img.name)
-  );
-  return {
-    post_number: post.post_number,
-    text: post.text,
-    has_text: post.text.length > 0,
-    has_image: !!imgMatch,
-    category: post.category,
-        scheduledTime: post.scheduledTime, // ✅ keep scheduledTime
-
-  };
-});
-
-      const matchedPostNumbers = new Set(matched.map(p => p.post_number));
-// Collect any images with no matching text post (image-only)
-const extraImages = images.filter((img) => {
-  const numberMatch = img.name.match(/post[\s-_]*(\d+)/i);
-  if (!numberMatch) return false;
-  const number = parseInt(numberMatch[1]);
-  return !matched.some((p) => p.post_number === number);
-});
-
-
-// Final preview list
-const previewPosts = [
-  ...matched,
-  ...extraImages.map((img) => {
-    const number = parseInt(img.name.match(/post[\s-_]*(\d+)/i)[1]);
-    return {
-      post_number: number,
-      text: "",           // no text
-      has_text: false,
-      has_image: true,
-      image_only: true,   // ✅ flag image-only
-            scheduledTime: null, // ✅ keep this key even for image-only
-
-    };
-  }),
-].sort((a, b) => a.post_number - b.post_number);
-
-// Warn but don't block preview
-const imageOnly = previewPosts.filter(p => p.image_only);
-if (imageOnly.length > 0) {
-  toast.warning(`${imageOnly.length} post(s) only have images. They will be skipped.`);
-}
-
-      // 🕒 Default Time Distribution Logic
-      const totalPosts = previewPosts.length;
-      const startParts = startTime.split(':').map(Number);
-      const endParts = endTime.split(':').map(Number);
-
-      // Convert to minutes since midnight
-      const startMinutes = startParts[0] * 60 + startParts[1];
-      const endMinutes = endParts[0] * 60 + endParts[1];
-
-      let interval;
-      if (intervalOption) {
-        interval = intervalOption;  // use user-selected interval
-      } else {
-        interval = totalPosts > 1 ? Math.floor((endMinutes - startMinutes) / (totalPosts - 1)) : 0;
-      }
-
-      const postsWithTime = previewPosts.map((post, index) => {
-        if (post.customTime) return post; // keep manually set times
-          if (post.scheduledTime) return { ...post, time: post.scheduledTime, customTime: true };
-          
-
-        const minutes = startMinutes + interval * index;
-
+    if (scheduleMode === "interval" && intervalOption) {
+      // Fixed interval
+      postsWithTime = previewPosts.map((post, index) => {
+        const minutes = startMinutes + intervalOption * index;
         if (minutes > endMinutes) {
-          return { ...post, time: null, customTime: false }; // mark unschedulable if exceeds end
+          return { ...post, time: null, customTime: false };
+        }
+        const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
+        const mins = String(minutes % 60).padStart(2, "0");
+        return { ...post, time: `${hours}:${mins}`, customTime: false };
+      });
+    } else {
+      // Default / Auto
+      const interval =
+        totalPosts > 1 ? Math.floor(totalDuration / (totalPosts - 1)) : 0;
+
+      postsWithTime = previewPosts.map((post, index) => {
+        if (post.customTime) return post;
+
+        if (scheduleMode === "default" && post.scheduledTime) {
+          // use file time
+          return { ...post, time: post.scheduledTime, customTime: true };
         }
 
-        const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
-        const mins = String(minutes % 60).padStart(2, '0');
-
-        return {
-          ...post,
-          time: `${hours}:${mins}`,
-          customTime: false,
-        };
+        // auto distribute
+        const minutes = startMinutes + interval * index;
+        if (minutes > endMinutes) {
+          return { ...post, time: null, customTime: false };
+        }
+        const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
+        const mins = String(minutes % 60).padStart(2, "0");
+        return { ...post, time: `${hours}:${mins}`, customTime: false };
       });
-
-      setPostCount(postsWithTime.length);
-      setResponse(postsWithTime);
-      setError(null);
-      setShowConfirm(true);
-      setIsPreviewed(true)
-
-    } catch (err) {
-      setError(err.message);
-      toast.error(err.message);
-    } finally {
-      setPreviewLoading(false);
     }
-  };
+
+    setPostCount(postsWithTime.length);
+    setResponse(postsWithTime);
+    setError(null);
+    setShowConfirm(true);
+    setIsPreviewed(true);
+  } catch (err) {
+    setError(err.message);
+    toast.error(err.message);
+  } finally {
+    setPreviewLoading(false);
+  }
+};
+
+
 
   const handleSubmit = async () => {
     const finalForm = new FormData();
@@ -335,8 +364,9 @@ if (imageOnly.length > 0) {
 
     finalForm.append('start_time', fullStart);
     finalForm.append('end_time', fullEnd);
+    finalForm.append('channels', JSON.stringify(selectedChannels));
     response.forEach((post) => {
-        if (post.image_only) return;  // 🚫 skip image-only
+      if (post.image_only) return;  //  skip image-only
       finalForm.append("times[]", `${post.post_number}|${post.time}`);
     });
 
@@ -395,7 +425,7 @@ if (imageOnly.length > 0) {
         };
     }
   };
-const checkOrConnectSheets = async (reconnect = false) => {
+  const checkOrConnectSheets = async (reconnect = false) => {
     setgshLoading(true);
     setStatus(reconnect ? "Reconnecting..." : "Checking connection...");
     try {
@@ -414,38 +444,84 @@ const checkOrConnectSheets = async (reconnect = false) => {
     // Check status on page load
     checkOrConnectSheets(false);
   }, []);
+
+
+
   return (
     <div className="max-w-4xl mx-auto mt-10 p-6 border rounded-xl shadow-xl bg-white text-[#000] space-y-6">
       <div className="p-4 border rounded-xl shadow-md flex items-center justify-between">
-  <div className="flex items-center gap-2">
-    <span className="text-xl" title="Google Sheets">
-      <Image src={gsheeticon} alt="Google Sheets" className="w-8 h-8" />
-    </span>
-    {/* Small indicator "blub" */}
-    <span
-      className={`w-3 h-3 rounded-full transition-colors ${
-        connected ? "bg-green-500" : "bg-red-500"
-      }`}
-      title={connected ? "Connected" : "Not Connected"}
-    ></span>
-  </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xl" title="Google Sheets">
+            <Image src={gsheeticon} alt="Google Sheets" className="w-8 h-8" />
+          </span>
+          {/* Small indicator "blub" */}
+          <span
+            className={`w-3 h-3 rounded-full transition-colors ${connected ? "bg-green-500" : "bg-red-500"
+              }`}
+            title={connected ? "Connected" : "Not Connected"}
+          ></span>
+        </div>
 
-  <button
-    onClick={() => checkOrConnectSheets(true)}
-    className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700"
-    disabled={gshloading}
-  >
-    {gshloading
-      ? "Please wait..."
-      : connected
-      ? "Reconnect Sheets"
-      : "Connect Sheets"}
-  </button>
-</div>
+        <button
+          onClick={() => checkOrConnectSheets(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700"
+          disabled={gshloading}
+        >
+          {gshloading
+            ? "Please wait..."
+            : connected
+              ? "Reconnect Sheets"
+              : "Connect Sheets"}
+        </button>
+      </div>
 
-<p className="mt-2 text-sm">{status}</p>
+      <p className="mt-2 text-sm">{status}</p>
 
       <h2 className="text-2xl font-bold text-[#000]">📅 Auto Scheduler with Preview</h2>
+
+      {/* Channel Selection */}
+      {/* Channel Selection - Replace the existing checkbox section with this dropdown */}
+<div className="flex flex-col my-5">
+  <label className="block font-semibold mb-2">Select Channels</label>
+  <div className="relative">
+    <select
+      multiple
+      value={selectedChannels}
+      onChange={(e) => {
+        const selected = Array.from(e.target.selectedOptions, option => option.value);
+        setSelectedChannels(selected);
+      }}
+      className="w-full p-3 border rounded-lg bg-white min-h-[120px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+    >
+      {CHANNELS.map((channel) => (
+        <option key={channel.id} value={channel.id} className="p-2">
+          {channel.name} ({channel.value})
+        </option>
+      ))}
+    </select>
+    <p className="text-xs text-gray-500 mt-1">
+      Hold Ctrl (Windows) or Cmd (Mac) to select multiple channels
+    </p>
+  </div>
+  {selectedChannels.length === 0 && (
+    <p className="text-red-500 text-sm mt-1">Please select at least one channel</p>
+  )}
+  {selectedChannels.length > 0 && (
+    <div className="mt-2">
+      <p className="text-sm font-medium text-gray-600">Selected:</p>
+      <div className="flex flex-wrap gap-2 mt-1">
+        {selectedChannels.map(channelId => {
+          const channel = CHANNELS.find(c => c.id === channelId);
+          return (
+            <span key={channelId} className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">
+              {channel?.name}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  )}
+</div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className='flex flex-col gap-y-3'>
@@ -488,7 +564,117 @@ const checkOrConnectSheets = async (reconnect = false) => {
         </div>
 
       </div>
+      <div className="bg-gray-50 p-4 rounded-xl">
+    
+        <h3 className="text-lg font-semibold text-gray-800 mb-3">🗓️ Schedule Date</h3>
+        <div className="flex flex-col md:flex-row gap-4 items-center">
+          <div className="flex gap-4 items-center">
+            <label><input type="radio" value="today" checked={dateType === 'today'} onChange={() => setDateType('today')} /> Today</label>
+            <label><input type="radio" value="tomorrow" checked={dateType === 'tomorrow'} onChange={() => setDateType('tomorrow')} /> Tomorrow</label>
+            <label><input type="radio" value="custom" checked={dateType === 'custom'} onChange={() => setDateType('custom')} /> Custom</label>
+          </div>
+          {dateType === 'custom' && (
+            <input type="date" className="p-2 border rounded" value={customDate} onChange={(e) => setCustomDate(e.target.value)} />
+          )}
+        </div>
 
+            {/* Scheduling Mode */}
+      <div className="flex flex-col my-5">
+        <label className="block font-semibold mb-2">Scheduling Mode</label>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              value="default"
+              checked={scheduleMode === "default"}
+              onChange={(e) => setScheduleMode(e.target.value)}
+            />
+            Default (Use text file times if available, else auto)
+          </label>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              value="auto"
+              checked={scheduleMode === "auto"}
+              onChange={(e) => setScheduleMode(e.target.value)}
+            />
+            Auto Calculation (Ignore file times)
+          </label>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              value="interval"
+              checked={scheduleMode === "interval"}
+              onChange={(e) => setScheduleMode(e.target.value)}
+            />
+            Intervals
+          </label>
+        </div>
+      </div>
+          {(scheduleMode === "auto" || scheduleMode === "interval") && (
+            <div>
+        <h3 className="text-lg font-semibold text-gray-800 mb-3">🗓️ Schedule Time</h3>
+        <div className="flex gap-6 mt-4">
+
+          <div className="flex flex-col">
+            <label className="block font-semibold mb-1">Start Time</label>
+            {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
+            <TimePicker
+              onChange={setStartTime}
+              value={startTime}
+              format="HH:mm"
+              clearIcon={null}
+              clockIcon={null}
+              disableClock={true}
+            />
+            {/* </div> */}
+          </div>
+
+          <div className="flex flex-col">
+            <label className="block font-semibold mb-1">End Time</label>
+            {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
+            <TimePicker
+              onChange={setEndTime}
+              value={endTime}
+              format="HH:mm"
+              clearIcon={null}
+              clockIcon={null}
+              disableClock={true}
+            />
+            {/* </div> */}
+          </div>
+        </div>
+              </div>
+
+        )}
+
+
+        {/* Interval selector – only show if "interval" mode is selected */}
+        {scheduleMode === "interval" && (
+          <div className="flex flex-col mt-4">
+            <label className="block font-semibold mb-1">Interval</label>
+            <select
+              className="p-2 border rounded bg-white"
+              value={intervalOption || ""}
+              onChange={(e) =>
+                setIntervalOption(e.target.value ? parseInt(e.target.value) : null)
+              }
+            >
+              <option value="">Select Interval</option>
+              <option value="5">Every 5 minutes</option>
+              <option value="10">Every 10 minutes</option>
+              <option value="15">Every 15 minutes</option>
+              <option value="20">Every 20 minutes</option>
+              <option value="30">Every 30 minutes</option>
+            </select>
+          </div>
+        )}
+
+
+
+      </div>
 
       {postCount !== null && (
         <p className="text-lg font-medium text-gray-800">📦 Total Posts: <span className="font-bold">{postCount}</span></p>
@@ -527,68 +713,9 @@ const checkOrConnectSheets = async (reconnect = false) => {
       )}
 
       {error && <p className="text-red-600 text-sm font-medium">{error}</p>}
+      
 
-      <div className="bg-gray-50 p-4 rounded-xl">
-        <h3 className="text-lg font-semibold text-gray-800 mb-3">🗓️ Schedule Time</h3>
-        <div className="flex flex-col md:flex-row gap-4 items-center">
-          <div className="flex gap-4 items-center">
-            <label><input type="radio" value="today" checked={dateType === 'today'} onChange={() => setDateType('today')} /> Today</label>
-            <label><input type="radio" value="tomorrow" checked={dateType === 'tomorrow'} onChange={() => setDateType('tomorrow')} /> Tomorrow</label>
-            <label><input type="radio" value="custom" checked={dateType === 'custom'} onChange={() => setDateType('custom')} /> Custom</label>
-          </div>
-          {dateType === 'custom' && (
-            <input type="date" className="p-2 border rounded" value={customDate} onChange={(e) => setCustomDate(e.target.value)} />
-          )}
-        </div>
-
-
-
-        <div className="flex gap-6 mt-4">
-          <div className="flex flex-col">
-            <label className="block font-semibold mb-1">Start Time</label>
-            {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
-            <TimePicker
-              onChange={setStartTime}
-              value={startTime}
-              format="HH:mm"
-              clearIcon={null}
-              clockIcon={null}
-              disableClock={true}
-            />
-            {/* </div> */}
-          </div>
-
-          <div className="flex flex-col">
-            <label className="block font-semibold mb-1">End Time</label>
-            {/* <div className="p-2 border rounded w-[130px] bg-white"> */}
-            <TimePicker
-              onChange={setEndTime}
-              value={endTime}
-              format="HH:mm"
-              clearIcon={null}
-              clockIcon={null}
-              disableClock={true}
-            />
-            {/* </div> */}
-          </div>
-        </div>
-        <div className="flex flex-col mt-4">
-          <label className="block font-semibold mb-1">Interval</label>
-          <select
-            className="p-2 border rounded bg-white"
-            value={intervalOption || ""}
-            onChange={(e) => setIntervalOption(e.target.value ? parseInt(e.target.value) : null)}
-          >
-            <option value="">Auto (Evenly Distributed)</option>
-            <option value="5">Every 5 minutes</option>
-            <option value="10">Every 10 minutes</option>
-            <option value="15">Every 15 minutes</option>
-            <option value="30">Every 30 minutes</option>
-          </select>
-        </div>
-
-
-      </div>
+      
       <button
         onClick={handlePreview}
         type="submit"
@@ -632,10 +759,24 @@ const checkOrConnectSheets = async (reconnect = false) => {
   <div className="mt-6">
     <h3 className="font-semibold text-lg text-gray-800 mb-3">⏰ Time Slots</h3>
 
+    {/* Legend */}
+    <div className="flex flex-wrap gap-4 mb-4 text-sm">
+      <div className="flex items-center gap-2">
+        {/* <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div> */}
+        <span className="text-red-700">⛔ Blocked (from logs)</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {/* <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></div> */}
+        <span className="text-blue-700">📌 Just Now Assigned</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {/* <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div> */}
+        <span className="text-green-700">✅ Available</span>
+      </div>
+    </div>
+
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
       {response.time_slots.map((slot, idx) => {
-        const isBlocked = slot.status === "blocked";
-
         // Normalize every time to "HH:mm"
         const timeStr = toHHmm(slot.time);
         const startStr = toHHmm(selectedStart);
@@ -644,30 +785,79 @@ const checkOrConnectSheets = async (reconnect = false) => {
         const isST = startStr === timeStr;
         const isET = endStr === timeStr;
 
+        // Determine slot styling and behavior based on status
+        let slotConfig;
+        switch (slot.status) {
+          case 'blocked':
+            slotConfig = {
+              bgColor: "bg-red-100",
+              textColor: "text-red-700", 
+              borderColor: "border-red-300",
+              hoverColor: "", // No hover for blocked
+              icon: "⛔",
+              label: "Blocked",
+              clickable: false,
+              clickMessage: "This slot is already occupied (from previous scheduling)"
+            };
+            break;
+          case 'assigned':
+            slotConfig = {
+              bgColor: "bg-blue-100",
+              textColor: "text-blue-700",
+              borderColor: "border-blue-300", 
+              hoverColor: "", // No hover for assigned
+              icon: "📌",
+              label: "Assigned",
+              clickable: false,
+              clickMessage: "This slot was just assigned in this operation"
+            };
+            break;
+          case 'free':
+          default:
+            slotConfig = {
+              bgColor: "bg-green-100",
+              textColor: "text-green-700",
+              borderColor: "border-green-300",
+              hoverColor: "hover:bg-green-200",
+              icon: "✅", 
+              label: "Free",
+              clickable: true,
+              clickMessage: ""
+            };
+            break;
+        }
+
         return (
           <div
             key={idx}
             className={`
-              relative flex flex-col items-center justify-center p-4 rounded-xl shadow-sm cursor-pointer transition
-              ${isBlocked ? "bg-red-100 text-red-700 border border-red-300" : "bg-green-100 text-green-700 border border-green-300 hover:bg-green-200"}
-              ${isST || isET ? "ring-2 ring-blue-500" : ""}
+              relative flex flex-col items-center justify-center p-4 rounded-xl shadow-sm transition
+              ${slotConfig.bgColor} ${slotConfig.textColor} border ${slotConfig.borderColor}
+              ${slotConfig.clickable ? `cursor-pointer ${slotConfig.hoverColor}` : 'cursor-not-allowed opacity-75'}
+              ${isST || isET ? "ring-2 ring-purple-500" : ""}
             `}
             onClick={() => {
-              if (isBlocked) return toast.error("This slot is blocked");
+              if (!slotConfig.clickable) {
+                return toast.error(slotConfig.clickMessage);
+              }
               // Pass HH:mm to the handler to avoid any timezone conversion
               handleSlotClick(timeStr);
             }}
           >
             <span className="text-sm font-medium">{timeStr}</span>
-            <span className="text-xs mt-1">{isBlocked ? "⛔ Blocked" : "✅ Free"}</span>
+            <span className="text-xs mt-1">
+              {slotConfig.icon} {slotConfig.label}
+            </span>
 
+            {/* Start Time indicator */}
             {isST && (
-              <span className="absolute top-1 right-2 text-green-700 font-bold text-xs border border-green-700 rounded-full px-2 py-0.5">
+              <span className="absolute top-1 right-2 text-purple-700 font-bold text-xs border border-purple-700 rounded-full px-2 py-0.5">
                 ST
               </span>
             )}
+            {/* End Time indicator */}
             {isET && (
-              <span className="absolute top-1 right-2 text-green-700 font-bold text-xs border border-green-700 rounded-full px-2 py-0.5">
+              <span className="absolute top-1 right-2 text-purple-700 font-bold text-xs border border-purple-700 rounded-full px-2 py-0.5">
                 ET
               </span>
             )}
@@ -677,8 +867,6 @@ const checkOrConnectSheets = async (reconnect = false) => {
     </div>
   </div>
 )}
-
-
 
 
       <Dialog open={showSubmit} onOpenChange={setshowSubmit}>
