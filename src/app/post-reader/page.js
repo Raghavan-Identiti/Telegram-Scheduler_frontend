@@ -215,7 +215,7 @@ export default function PostReader() {
         {/* Empty State */}
         {!loading && posts.length === 0 && !errorMsg && (
           <p className="mt-4 text-gray-500 text-center">
-            No posts found. Select options and click "Read Posts".
+            No posts found. Select options and click &quot; Read Posts &quot;.
           </p>
         )}
       </div>
