@@ -276,10 +276,9 @@ const handlePreview = async () => {
 
     const imageOnly = previewPosts.filter((p) => p.image_only);
     if (imageOnly.length > 0) {
-      toast.warning(
-        `${imageOnly.length} post(s) only have images. They will be skipped.`
-      );
+      toast.info(`${imageOnly.length} post(s) contain only images and will still be scheduled as image posts.`);
     }
+
 
     // Time assignment
     const totalPosts = previewPosts.length;
@@ -366,7 +365,6 @@ const handlePreview = async () => {
     finalForm.append('end_time', fullEnd);
     finalForm.append('channels', JSON.stringify(selectedChannels));
     response.forEach((post) => {
-      if (post.image_only) return;  //  skip image-only
       finalForm.append("times[]", `${post.post_number}|${post.time}`);
     });
 
