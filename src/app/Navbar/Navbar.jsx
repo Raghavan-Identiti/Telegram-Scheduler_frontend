@@ -14,6 +14,7 @@ const navItems = [
   // { label: 'Calendar-AutoScheduler', href: '/calender' },
   { label: 'Auto Schedule', href: '/auto-schedule' },
   { label: 'Post Reader', href: '/post-reader' },
+  { label: 'Scheduler Post Reader', href: '/scheduler-post-reader' },
   // { label: 'Logs', href: '/logs' },
 //   { label: 'Settings', href: '/settings' } // Optional
 ];
