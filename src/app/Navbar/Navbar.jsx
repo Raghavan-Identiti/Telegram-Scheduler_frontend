@@ -16,7 +16,7 @@ const navItems = [
   { label: 'Post Reader', href: '/post-reader' },
   { label: 'Scheduler Post Reader', href: '/scheduler-post-reader' },
   // { label: 'Logs', href: '/logs' },
-//   { label: 'Settings', href: '/settings' } // Optional
+  //   { label: 'Settings', href: '/settings' } // Optional
 ];
 
 export default function Navbar() {
@@ -24,9 +24,12 @@ export default function Navbar() {
 
   return (
     <nav className="bg-white border-b shadow-sm px-6 py-4 flex justify-between items-center">
-      <div className="text-xl font-bold text-[#29b6f6] w-10 h-10 flex items-center text-nowrap">
-            <Image src={telegramIcon} alt="Telegram" />
+      <div className="">
+        <Link href={'/'} className='text-xl font-bold text-[#29b6f6] w-10 h-10 flex items-center text-nowrap'>
+        <Image src={telegramIcon} alt="Telegram" />
         Telegram Scheduler
+        </Link>
+
       </div>
       <ul className="flex space-x-6 text-sm font-medium text-black-700">
         {navItems.map(({ label, href }) => (
