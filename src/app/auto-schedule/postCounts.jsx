@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import axios from "axios";
 
 export default function PostStats() {
   const [channels, setChannels] = useState([]);
@@ -33,39 +34,52 @@ export default function PostStats() {
     }
   };
 
-  const fetchStats = async (date, channelIds) => {
-    if (!channelIds || channelIds.length === 0) {
-      setChannels([]);
-      setTotals({ live: 0, scheduled: 0, total: 0 });
-      return;
+const fetchStats = async (date, channelIds) => {
+  if (!channelIds || channelIds.length === 0) {
+    setChannels([]);
+    setTotals({ live: 0, scheduled: 0, total: 0 });
+    return;
+  }
+
+  try {
+    setLoading(true);
+    const channelParam = channelIds.join(',');
+
+    const res = await axios.get(`${BASE_URL}/posts-summary`, {
+      params: { date, channels: channelParam },
+      headers: {
+        "Content-Type": "application/json",
+      },
+      timeout: 10000, // optional: 10s timeout
+    });
+
+    const data = res.data;
+    const channelsData = data.channels || [];
+
+    const totalLive = channelsData.reduce((sum, ch) => sum + (ch.live_posts || 0), 0);
+    const totalScheduled = channelsData.reduce((sum, ch) => sum + (ch.scheduled_posts || 0), 0);
+
+    setChannels(channelsData);
+    setTotals({
+      live: totalLive,
+      scheduled: totalScheduled,
+      total: totalLive + totalScheduled,
+    });
+
+    setLastUpdated(new Date().toLocaleTimeString());
+  } catch (err) {
+    console.error("❌ Failed to load post stats:");
+    if (err.response) {
+      console.error("Server responded with error:", err.response.status, err.response.data);
+    } else if (err.request) {
+      console.error("No response received from server:", err.request);
+    } else {
+      console.error("Request setup error:", err.message);
     }
-
-    try {
-      setLoading(true);
-      const channelParam = channelIds.join(',');
-      const res = await fetch(`${BASE_URL}/posts-summary?date=${date}&channels=${channelParam}`);
-      const data = await res.json();
-      const channelsData = data.channels || [];
-
-      // Calculate totals
-      const totalLive = channelsData.reduce((sum, ch) => sum + (ch.live_posts || 0), 0);
-      const totalScheduled = channelsData.reduce((sum, ch) => sum + (ch.scheduled_posts || 0), 0);
-
-      setChannels(channelsData);
-      setTotals({ 
-        live: totalLive, 
-        scheduled: totalScheduled,
-        total: totalLive + totalScheduled
-      });
-      
-      // Set last updated time after successful fetch
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (err) {
-      console.error("❌ Failed to load post stats:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (selectedChannels.length > 0) {
