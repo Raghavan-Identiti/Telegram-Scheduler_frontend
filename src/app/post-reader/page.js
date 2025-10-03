@@ -96,6 +96,7 @@ export default function PostReader() {
             <option value="@Amazon_Associates_FashionBeauty">@Amazon_Associates_FashionBeauty</option>
             <option value="@Amazon_Associates_HomeKitchen">@Home & Kitchen (Amazon Associates)</option>
             <option value="@Amazon_Associates_Consumables">@Consumables (Amazon Associates)</option>
+            <option value="@amazoninfluencerprogramindia">@AIP (Amazon Influencer Program India)</option>
           </select>
         </div>
 
